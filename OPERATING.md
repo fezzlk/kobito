@@ -25,9 +25,19 @@ python ~/repos/human-agent-board/board.py list --direction user-to-agent
 連携しているissueトラッカー（現状はLinear）の全プロジェクトから、未着手の候補issueを探す。
 
 - 既に`kobito:in-progress`ラベルが付いているissueは、他の実行が着手中とみなしスキップする。
+- `kobito:plan-pending`ラベルが付いているissueは無条件スキップにはせず、「3-1. 計画レビュー待ちの確認」の対象として扱う。
 - 対象範囲はプロジェクト・ラベルによる事前絞り込みをしない。着手可否の判断は次のステップで行う。
 
 ### 3. 着手可否の判断
+
+#### 3-1. 計画レビュー待ちの確認（`kobito:plan-pending`ラベルが付いている場合）
+
+human-agent-boardの`user-to-agent`キューに、このissueに対する承認（`related-link`がこのissueのURLと一致するもの）があるか確認する。
+
+- 承認あり: ラベルを`kobito:in-progress`に戻し、対応する`user-to-agent`エントリを`complete`した上で「5. 作業」に進む（計画は既に`agent-to-user`へ書いた内容のまま進めてよく、あらためて4'を経由する必要はない）。
+- 承認なし: このissueには今回は着手せず、次の候補に進む（再度plan_requestは書かない。催促は行わない）。
+
+#### 3-2. 通常の着手可否判断
 
 見つけた候補issueごとに、以下を確認する。いずれかに該当する場合はそのissueには着手せず、次の候補に進む（無理に着手しない）。
 
@@ -38,12 +48,32 @@ python ~/repos/human-agent-board/board.py list --direction user-to-agent
   - 一定額（目安100円）以上の費用が発生しうる操作
   - 認証情報の新規発行・既存認証情報の変更
   - 上記以外で、実行環境の安全運用ルールに抵触する操作
+- 対象リポジトリのCLAUDE.md等が、見込まれる変更規模（3ファイル以上にまたがる変更、既存の動作・構造への影響等）に対して対話的な計画承認（EnterPlanMode等）を必須としているか
+  → 該当する場合は着手を中断し、「4'. 計画レビュー依頼」に進む（このissueにはこの場で実装しない）
 
 着手できる候補が見つからなければ、その回の実行はここで終了する。
 
 ### 4. claim
 
 着手するissueに`kobito:in-progress`ラベルを付与する。これにより、同時に複数の実行が同じissueに重複着手することを防ぐ。
+
+### 4'. 計画レビュー依頼（対話的な計画承認が必須なリポジトリの場合）
+
+実装せず、以下を行う。
+
+1. issueに`kobito:plan-pending`ラベルを付与する（`kobito:in-progress`は付与しない）。
+2. 計画内容（何を・どのファイルを・どう変更する予定か）をまとめ、human-agent-boardの`agent-to-user`へ書き込む。
+
+   ```
+   python ~/repos/human-agent-board/board.py add --direction agent-to-user \
+     --from kobito --type plan_request \
+     --title "<短い要約>" --body "<計画の内容>" \
+     --related-link <issueのURL>
+   ```
+
+3. このissueへの着手はここで終了する。次の候補があれば「2. 候補issueの探索」に戻り、なければその回の実行を終了する。
+
+承認された場合の再開は「3-1」を参照。
 
 ### 5. 作業
 
