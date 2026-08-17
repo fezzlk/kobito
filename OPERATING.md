@@ -107,8 +107,9 @@ python ~/repos/human-agent-board/board.py add --direction agent-to-user \
 
 v1のkobitoが読み取る入力元は、issueトラッカー（ユーザーが管理するワークスペース）とhuman-agent-boardの`user-to-agent`キュー（ユーザー自身が書き込む場所）に限られる。外部からの未検証な入力（Webhook等、第三者が任意の内容を書き込める経路）は扱わない。「誰の指示で再開してよいか」の照合は、この入力元の限定によって担保する。
 
+**例外（LINE Bot経由の承認/却下、2026-08-18〜）**: `human-agent-board`の`agent-to-user`書き込み時、`ai-gateway`の`/line/webhook`経由でLINEへ通知が送られ、ユーザーはLINE上のボタンから承認/却下できる（FEZ-91）。このルートは技術的にはWebhookだが、(1) LINEのX-Line-Signatureによる署名検証、(2) 送信元LINE userIdが固定の`LINE_AUTHORIZED_USER_ID`（ユーザー本人）と一致することの確認、の二重チェックにより、実質的に「ユーザー自身が書き込む」のと同じ信頼境界を保っている。第三者が任意の内容を注入できる経路ではないため、上記の原則には抵触しない。詳細: `human-agent-board`リポジトリの`ai-gateway`側実装（`src/routes/line_webhook.py`）。
+
 ## 対象外（v1のスコープ外）
 
 - マージ・デプロイなど、PR作成より先の操作
-- issueトラッカー・human-agent-board以外からの指示の受け付け
-- 通知チャネル（human-agent-boardへの書き込みをユーザーへ能動的に知らせる仕組み）の実装。現時点ではユーザー側が`board.py list --direction agent-to-user`で確認する運用（該当issue: [FEZ-91](https://linear.app/fezzlk/issue/FEZ-91)）。
+- issueトラッカー・human-agent-board（LINE Bot経由の承認/却下を含む）以外からの指示の受け付け
