@@ -81,3 +81,7 @@ python ~/repos/human-agent-board/board.py add \
 ## 新規プロジェクトへの利用
 
 新規プロジェクトを設計するときは、要件を固める前にTech Radarを横断検索する。候補技術は自動採用せず、要件適合性、現在の成熟度、撤退容易性を再評価し、採用・試験・見送りを設計判断として記録する。
+
+## Opportunity Radarへの供給
+
+Tech Radarの新規・更新issueは、[OPPORTUNITY_RADAR.md](./OPPORTUNITY_RADAR.md)の発想材料として利用する。技術名をそのままサービス案にせず、「その技術で初めて可能になる体験」「既存資産との意外な組み合わせ」「技術がなくても残る課題」を分けて評価する。
