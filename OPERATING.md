@@ -49,6 +49,33 @@ python ~/repos/human-agent-board/board.py list --direction user-to-agent
 
 保留中の依頼があれば内容に従う（例: 特定issueの優先、一時停止の指示など）。拾った依頼は着手時に`complete`で取り除く。
 
+### 1-1. GitHub・Linear接続preflight
+
+候補issueを探索する前に、agent-kitの共通preflightを対象リポジトリ候補ごとに実行する。対象がまだ決まっていない最初の検査ではkobito自身を使う。
+
+```bash
+python3 ~/repos/agent-kit/scripts/connectivity-preflight.py \
+  --json --repo ~/repos/kobito
+```
+
+`checks`の各能力は独立して扱う。特に`git_fetch`・`git_push`と`github_api`、`linear_read`・`linear_write`を同一視しない。
+
+- `overall: OK`: 通常どおり「2. 候補issueの探索」へ進む。
+- `overall: DEGRADED`: `recovery`と利用不能な能力を確認する。Linear writeを確認できない場合はissueのclaim・ラベル・status・コメントを更新できないため、**新規issueへは着手しない**。安全な読み取りと復旧調査だけを行える。
+- `overall: BLOCKED`: 候補issueを探索・claimせず、その回の実行を停止する。
+
+DEGRADEDまたはBLOCKEDで通常作業を開始できない場合、可能ならhuman-agent-boardへ以下のstatusを残す。通知自体が失敗しても再試行ループには入らず終了する。
+
+```bash
+python ~/repos/human-agent-board/board.py status set \
+  --source kobito --work-id connectivity-preflight --state failed \
+  --title "GitHub・Linear接続preflight" \
+  --summary "<OK/DEGRADED/BLOCKEDと失敗した能力。秘密値は含めない>" \
+  --next-action "<preflightが返した復旧手順>" --notify
+```
+
+通知にはトークン、APIキー、Authorizationヘッダー、コマンドへ注入された環境変数、認証URLを含めない。復旧後の次回起動でpreflightを再実行し、成功してから通常フローへ戻る。
+
 ### 2. 候補issueの探索
 
 連携しているissueトラッカー（現状はLinear）の全プロジェクトから、未着手の候補issueを探す。

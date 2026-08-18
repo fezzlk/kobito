@@ -21,6 +21,7 @@ kobitoが1回の起動で行う具体的な手順（issueの探索・着手可�
 kobito自体は特定の実行基盤に依存しない設計だが、現状の運用では以下を想定している:
 
 - **トリガー**: 定期実行の起点（cron等）が、実行環境へ「OPERATING.mdの手順に従え」という短い指示を送るだけの薄いトリガーとして動作する。
+- **接続ゲート**: issue探索前にagent-kitの共通preflightを実行し、GitHub・Linearの必須能力がBLOCKEDならclaimせず停止する。DEGRADED時もLinear writeを確認できない限り新規issueへ着手しない。
 - **実行**: 実際の作業（issue調査・実装・PR作成・human-agent-boardとのやり取り）は、GitHub・issueトラッカー・human-agent-boardへの書き込み権限を持つ環境（例: 個人のリモート実行基盤）で行う。
 
 個人運用における具体的な構成（どのトリガー・どの実行環境を使っているか）は https://github.com/fezzlk/pico の `projects/kobito.md` を参照。
