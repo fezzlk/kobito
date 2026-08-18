@@ -53,11 +53,17 @@ python ~/repos/human-agent-board/board.py list --direction user-to-agent
 
 連携しているissueトラッカー（現状はLinear）の全プロジェクトから、未着手の候補issueを探す。
 
+探索前に、既存のstatusスナップショットとissueトラッカーを突き合わせる。issueが既にDone/Canceledならstatusを`completed`に移し、残存する`kobito:in-progress`・`kobito:plan-pending`・`kobito:pr-open`ラベルを外す。これにより、古いラベルや状態を進行中として表示し続けない。
+
 - 既に`kobito:in-progress`ラベルが付いているissueは、他の実行が着手中とみなしスキップする。
-- `kobito:plan-pending`ラベルが付いているissueは無条件スキップにはせず、「3-1. 計画レビュー待ちの確認」の対象として扱う。
+- `kobito:plan-pending`ラベルが付いているissueも無条件スキップにはせず、他の候補と同列に扱う（「3-1. 計画レビュー待ちの確認」の対象、詳細は後述）。
 - 対象範囲はプロジェクト・ラベルによる事前絞り込みをしない。着手可否の判断は次のステップで行う。
 
-探索前に、既存のstatusスナップショットとissueトラッカーを突き合わせる。issueが既にDone/Canceledならstatusを`completed`に移し、残存する`kobito:in-progress`・`kobito:plan-pending`・`kobito:pr-open`ラベルを外す。これにより、古いラベルや状態を進行中として表示し続けない。
+集めた候補は、**全プロジェクト横断で優先度順（Urgent → High → Medium → Low → None）にソート**する。同一優先度内は作成日時が古い順（先に待っているものを優先）。プロジェクトごとの優先度づけはしない。`kobito:plan-pending`の候補も、承認済みだからといって優先度を無視して先頭に割り込ませたりはせず、同じ優先度順リストの中で扱う。
+
+この優先度順に候補を1件ずつ見ていく。各候補について、まず**ブロック関係を確認する**（Linear issue取得時にブロック関係を含める）。自分をブロックしているissueが未完了（Done/Canceled以外）の場合、優先度に関わらずこの候補はスキップし、次の候補に進む。ブロックされていない候補が見つかったら、そこで初めて「3. 着手可否の判断」に進む。3-2で着手不可と判断された場合も、優先度順で次の候補に進む。
+
+優先度順を最後まで見てもブロックされていない・着手可能な候補が無ければ、その回の実行はここで終了する。
 
 ### 3. 着手可否の判断
 
