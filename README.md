@@ -16,6 +16,8 @@ kobitoが1回の起動で行う具体的な手順（issueの探索・着手可�
 
 週次のサービス・事業アイデア生成は [OPPORTUNITY_RADAR.md](./OPPORTUNITY_RADAR.md) を参照。`Tech Radar`、全プロジェクト、既存issue、運用上の詰まりを横断し、本命・越境・ワイルドカードを原則1件ずつLinearの専用`Opportunity Radar`プロジェクトへ保存する。アイデアは自動実装せず、ユーザーが検証候補にしたものだけ次の計画へ進める。
 
+週次の優先度未設定issue棚卸しは [PRIORITY_TRIAGE.md](./PRIORITY_TRIAGE.md) を参照。全プロジェクトを横断して優先度が`None`のissueを集め、LINEのカードからタップ1つでLinearの優先度を設定できるようにする。
+
 ## 実行基盤
 
 kobito自体は特定の実行基盤に依存しない設計だが、現状の運用では以下を想定している:
