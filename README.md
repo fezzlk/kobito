@@ -6,6 +6,8 @@ Linear等のissueトラッカーを定期的に自律実行で消化し、判断
 
 判断・確認が必要な場面は [human-agent-board](https://github.com/fezzlk/human-agent-board) 経由でユーザーへエスカレーションする。連携先はLinearに限定しない。
 
+作業中はissue単位の状態（調査中・実装中・検証中・判断待ち・PR待ち等）をhuman-agent-boardへ上書きし、重要な状態遷移だけLINEへ通知する。ユーザーはLINE Botへ「kobito状況」と送ることで、進行中作業と直近の完了・失敗をいつでも確認できる。タスク・優先度・正式な完了状態の正本はissueトラッカー、human-agent-boardの状態はリアルタイム表示用のスナップショットとする。
+
 ## 実行手順
 
 kobitoが1回の起動で行う具体的な手順（issueの探索・着手可否判断・claim・作業・エスカレーション）は [OPERATING.md](./OPERATING.md) を参照。
