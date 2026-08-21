@@ -49,6 +49,48 @@ python ~/repos/human-agent-board/board.py list --direction user-to-agent
 
 保留中の依頼があれば内容に従う（例: 特定issueの優先、一時停止の指示など）。拾った依頼は着手時に`complete`で取り除く。
 
+### 1-1. GitHub・Linear接続preflight
+
+候補issueを探索する前に、agent-kitの共通preflightを対象リポジトリ候補ごとに実行する。対象がまだ決まっていない最初の検査ではkobito自身を使う。
+
+```bash
+python3 ~/repos/agent-kit/scripts/connectivity-preflight.py \
+  --json --repo ~/repos/kobito --linear-write-allowed
+```
+
+`checks`の各能力は独立して扱う。特に`git_fetch`・`git_push`と`github_api`、`linear_read`・`linear_write`を同一視しない。
+
+- `overall: OK`: 通常どおり「2. 候補issueの探索」へ進む。
+- `overall: DEGRADED`: `recovery`と利用不能な能力を確認する。Linear writeを確認できない場合はissueのclaim・ラベル・status・コメントを更新できないため、**新規issueへは着手しない**。安全な読み取りと復旧調査だけを行える。
+- `overall: BLOCKED`: 候補issueを探索・claimせず、その回の実行を停止する。
+
+DEGRADEDまたはBLOCKEDで通常作業を開始できない場合、可能ならhuman-agent-boardへ以下のstatusを残す。加えて、ユーザー操作なしに復旧できない能力（認証設定、権限付与、接続設定等）が1つでもあれば、`agent-to-user`へ具体的な設定依頼を残す。`--dedupe-key connectivity-preflight`により同じ障害は新規通知を増やさず既存項目を更新する。通知自体が失敗しても再試行ループには入らず終了する。
+
+```bash
+python ~/repos/human-agent-board/board.py status set \
+  --source kobito --work-id connectivity-preflight --state failed \
+  --title "GitHub・Linear接続preflight" \
+  --summary "<OK/DEGRADED/BLOCKEDと失敗した能力。秘密値は含めない>" \
+  --next-action "<preflightが返した復旧手順>" --notify
+
+python ~/repos/human-agent-board/board.py add \
+  --direction agent-to-user --from kobito --type action_required \
+  --dedupe-key connectivity-preflight \
+  --title "kobitoの接続設定を修復してください" \
+  --body "<失敗した能力、作業への影響、ユーザーが行う具体的な復旧手順、連続失敗回数>"
+```
+
+`action_required`は承認・却下を求める項目ではなく、ユーザーによる設定作業を求める通知として扱う。「確認してください」だけで終わらせず、実行するコマンドまたは設定画面、成功確認方法、kobitoが自動再試行する時刻を記載する。
+
+通知にはトークン、APIキー、Authorizationヘッダー、コマンドへ注入された環境変数、認証URLを含めない。復旧後の次回起動でpreflightを再実行し、成功したら既存の障害項目を解消してから通常フローへ戻る。
+
+```bash
+python ~/repos/human-agent-board/board.py resolve \
+  --direction agent-to-user --dedupe-key connectivity-preflight
+```
+
+復旧時はstatusを`completed`として`--notify`し、「接続が正常に戻り通常作業を再開する」と明示する。
+
 ### 2. 候補issueの探索
 
 連携しているissueトラッカー（現状はLinear）の全プロジェクトから、未着手の候補issueを探す。
