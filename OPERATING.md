@@ -91,6 +91,18 @@ python ~/repos/human-agent-board/board.py resolve \
 
 復旧時はstatusを`completed`として`--notify`し、「接続が正常に戻り通常作業を再開する」と明示する。
 
+### 1-2. 関与中issueのコメント確認
+
+`kobito:in-progress`・`kobito:plan-pending`・`kobito:pr-open`のいずれかのラベルが付いている（＝human-agent-boardの`status/current`に対応するスナップショットがある）issueについて、Linearのコメントを取得する。
+
+各issueについて、そのissueに対するkobitoの直近のstatusスナップショットの`updated_at`より新しいコメントがあれば、ユーザーからの新規の意思表示とみなして内容を読む。kobito自身が投稿したLinearコメントは、直後に必ず`status set`を呼んで`updated_at`を更新する運用のため、通常はここで「新規」として誤検知しない。
+
+- `kobito:plan-pending`のissue: 承認・却下・修正指示の意図がないか確認する（具体的な扱いは「3-1」）。
+- `kobito:in-progress`のissue: 停止・方針変更の指示でないか確認する。停止指示なら作業を中断し、「6. エスカレーション」の要領でhuman-agent-boardへ状況を書き戻す（理由は「ユーザーからの新規コメントによる中断」とする）。方針変更の指示なら以降の作業に反映する。単なる補足情報であれば、そのまま作業を継続してよい。
+- `kobito:pr-open`のissue: レビューフィードバックとして読む。既存PRのブランチを再開して対応できる内容であれば対応し、追加コミットをpushしてissueにコメントする。
+
+新規コメントの意図が不明瞭な場合は、憶測で進めず、このissueについては今回何もしない（該当issueのstatus・ラベルはそのまま。追加の通知や催促もしない）。
+
 ### 2. 候補issueの探索
 
 連携しているissueトラッカー（現状はLinear）の全プロジェクトから、未着手の候補issueを探す。
@@ -110,12 +122,14 @@ python ~/repos/human-agent-board/board.py resolve \
 
 ### 3. 着手可否の判断
 
-#### 3-1. 計画レビュー待ちの確認（`kobito:plan-pending`ラベルが付いている場合）
+#### 3-1. 着手承認待ちの確認（`kobito:plan-pending`ラベルが付いている場合）
 
-human-agent-boardの`user-to-agent`キューに、このissueに対する承認（`related-link`がこのissueのURLと一致するもの）があるか確認する。
+human-agent-boardの`user-to-agent`キューに、このissueに対する承認（`related-link`がこのissueのURLと一致するもの）があるか確認する。加えて、「1-2. 関与中issueのコメント確認」で見つけた、このissueへの新規Linearコメント（直近statusの`updated_at`より新しいもの）があれば内容を読み、承認・却下・修正指示のいずれかとして扱えないか判断する。
 
-- 承認あり: ラベルを`kobito:in-progress`に戻し、対応する`user-to-agent`エントリを`complete`した上で「5. 作業」に進む（計画は既に`agent-to-user`へ書いた内容のまま進めてよく、あらためて4'を経由する必要はない）。
-- 承認なし: このissueには今回は着手せず、次の候補に進む（再度plan_requestは書かない。催促は行わない）。
+- 承認あり（LINEボタン、または明確な承認の意思を示すコメント）: ラベルを`kobito:in-progress`に戻し、statusを`researching`へ更新し、対応する`user-to-agent`エントリがあれば`complete`した上で「5. 作業」に進む（計画は既に`agent-to-user`とLinearコメントへ書いた内容のまま進めてよく、あらためて4を経由する必要はない）。
+- 却下あり（LINEボタン、または明確な却下の意思を示すコメント）: `kobito:plan-pending`ラベルを外し、このissueへの着手を取りやめる。再度plan_requestは書かない。
+- コメントはあるが意図が不明瞭: 憶測で進めず、このissueには今回は着手しない（追加の質問や催促はしない）。
+- 承認・却下・新規コメントのいずれも無し: このissueには今回は着手せず、次の候補に進む（再度plan_requestは書かない。催促は行わない）。
 
 #### 3-2. 通常の着手可否判断
 
@@ -128,34 +142,28 @@ human-agent-boardの`user-to-agent`キューに、このissueに対する承認�
   - 一定額（目安100円）以上の費用が発生しうる操作
   - 認証情報の新規発行・既存認証情報の変更
   - 上記以外で、実行環境の安全運用ルールに抵触する操作
-- 対象リポジトリのCLAUDE.md等が、見込まれる変更規模（3ファイル以上にまたがる変更、既存の動作・構造への影響等）に対して対話的な計画承認（EnterPlanMode等）を必須としているか
-  → 該当する場合は着手を中断し、「4'. 計画レビュー依頼」に進む（このissueにはこの場で実装しない）
+
+上記のいずれにも該当しない候補が見つかったら、「4. 着手承認依頼」に進む（この場では実装しない）。対象リポジトリのCLAUDE.md等がEnterPlanMode等の対話的な計画承認を必須としている場合は、4で書く計画をファイル単位までより具体的に記述する。
 
 着手できる候補が見つからなければ、その回の実行はここで終了する。
 
-### 4. claim
+### 4. 着手承認依頼
 
-着手するissueに`kobito:in-progress`ラベルを付与する。これにより、同時に複数の実行が同じissueに重複着手することを防ぐ。
+kobitoは実装を始める前に、必ずユーザーの着手承認を得る。この段階では実装せず、以下を行う。
 
-claim直後、statusを`researching`として作成する。summaryには着手理由と最初に調べる対象、next-actionには直近の具体的な作業を記載し、issue URLを`related-link`に含める。この段階では`--notify`しない。
-
-### 4'. 計画レビュー依頼（対話的な計画承認が必須なリポジトリの場合）
-
-実装せず、以下を行う。
-
-1. issueに`kobito:plan-pending`ラベルを付与する（`kobito:in-progress`は付与しない）。
-2. 計画内容（何を・どのファイルを・どう変更する予定か）をまとめ、human-agent-boardの`agent-to-user`へ書き込む。
+1. issueに`kobito:plan-pending`ラベルを付与する（`kobito:in-progress`は付与しない）。これにより、同時に複数の実行が同じissueに重複着手することも防ぐ。
+2. 何を・なぜ着手したいか（規模に応じて、どのファイルをどう変更する予定か）をまとめ、**human-agent-boardの`agent-to-user`とLinear issueのコメントの両方**に書き込む。Linearコメントに書くのは、ユーザーがLinear上で返信できるようにするため（「1-2」「3-1」で読み取る）。
 
    ```
    python ~/repos/human-agent-board/board.py add --direction agent-to-user \
      --from kobito --type plan_request \
-     --title "<短い要約>" --body "<計画の内容>" \
+     --title "<短い要約>" --body "<着手する理由・内容>" \
      --related-link <issueのURL>
    ```
 
-   合わせて同じissueのstatusを`decision_pending`へ更新し、`--notify`を付ける。summaryには判断が必要な理由、next-actionには承認後に最初に行う作業を記録する。
+   合わせて同じissueのstatusを`decision_pending`へ更新し、`--notify`を付ける。summaryには着手したい理由、next-actionには承認後に最初に行う作業を記録する。
 
-3. このissueへの着手はここで終了する。次の候補があれば「2. 候補issueの探索」に戻り、なければその回の実行を終了する。
+3. このissueへの着手はここで終了する。次の候補があれば「2. 候補issueの探索」に戻り、なければその回の実行を終了する（1回の実行での新規の着手承認依頼は基本的に1件に留める）。
 
 承認された場合の再開は「3-1」を参照。
 
