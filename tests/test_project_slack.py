@@ -421,3 +421,32 @@ def test_plan_without_choices_gets_no_reply_templates(setup):
     runtime, _, _ = setup
     runtime.notify({**decision_item(), "body": "A案で進めます\n変更内容"}, "plan.yaml")
     assert len(runtime.slack.posts) == 1
+
+
+def test_markdown_is_rendered_as_slack_mrkdwn_without_allowing_mentions(setup):
+    runtime, _, _ = setup
+    runtime.post("CONE", "## 見出し\n**太字**と`code`\n- 項目 <@UOTHER> <!here>\n"
+                         "[PR](https://github.com/x/y/pull/1)\n```\n**そのまま**\n```")
+    post = runtime.slack.posts[-1]
+    assert post["mrkdwn"] is True and post["link_names"] is False
+    assert post["text"].split("\n") == [
+        "*見出し*", "*太字*と`code`", "• 項目 &lt;@UOTHER&gt; &lt;!here&gt;",
+        "<https://github.com/x/y/pull/1|PR>", "```", "**そのまま**", "```"]
+
+
+def test_decision_card_sections_use_mrkdwn(setup):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "body": "**計画**\n- 手順"}, "plan.yaml")
+    sections = [b["text"] for b in runtime.slack.posts[0]["blocks"] if b["type"] == "section"]
+    assert all(s["type"] == "mrkdwn" for s in sections)
+    assert "*計画*\n• 手順" in sections[0]["text"]
+
+
+def test_thread_reply_addressed_to_another_app_is_ignored(setup):
+    runtime, calls, _ = setup
+    runtime.accept(event())
+    runtime.process_one()
+    reply = event("<@ULINEAR> RJHプロジェクトに起票: README", ts="1.000002", thread_ts="1.000001")
+    reply["event"]["type"] = "message"
+    assert not runtime.accept(reply)
+    assert len(calls) == 1
