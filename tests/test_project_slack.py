@@ -405,6 +405,7 @@ def test_choice_question_posts_one_copyable_letter_reply_per_choice(setup):
     runtime.notify(item, "question.yaml")
     question, *templates = runtime.slack.posts
     assert "返信用メッセージ" in question["text"]
+    assert "blocks" not in question
     assert [t["text"] for t in templates] == [
         "置き手紙: A（README.md を新規作成する）", "置き手紙: B（上の改善点リストだけで十分）",
         "置き手紙: C（別の文書を指していた）"]

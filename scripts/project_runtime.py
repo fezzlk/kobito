@@ -520,7 +520,8 @@ class Runtime:
         if templates:
             text += "\n\n返信は、下の返信用メッセージから一つをコピーして、このスレッドに貼ってください。"
         token, blocks = None, None
-        if item.get("type") in DECISION_TYPES:
+        # A choice question is answered with a reply template; approve/reject would not say which choice.
+        if item.get("type") in DECISION_TYPES and not templates:
             if len(text) > 12000:
                 raise ValueError("decision is too long; provide a reviewable plan link")
             token = secrets.token_hex(16)
