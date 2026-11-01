@@ -6,7 +6,8 @@
   "features": {"bot_user": {"display_name": "kobito", "always_online": false}},
   "oauth_config": {"scopes": {"bot": [
     "app_mentions:read", "chat:write", "channels:read", "channels:history",
-    "groups:read", "groups:history", "bookmarks:read"
+    "groups:read", "groups:history", "bookmarks:read",
+    "channels:manage", "bookmarks:write"
   ]}},
   "settings": {
     "socket_mode_enabled": true,
