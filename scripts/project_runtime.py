@@ -21,6 +21,16 @@ ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 TS_RE = re.compile(r"[0-9]+\.[0-9]+\Z")
 DECISION_TYPES = {"approval_request", "decision_request", "plan_request"}
 LETTERS = re.compile(r"^(?:置き手紙|あとで)\s*[:：]?\s*")
+CHOICES = re.compile(r"^\s*([A-Z])\s*[.．:：)）]\s*(\S.*)$", re.M)
+
+
+def reply_templates(body):
+    """Copy-ready letter replies for a question that lists its choices as "A. ...", "B. ..." lines."""
+    choices = CHOICES.findall(body or "")
+    if len(choices) < 2 or [c[0] for c in choices] != [chr(ord("A") + i) for i in range(len(choices))]:
+        return []
+    return [f"置き手紙: {letter}（{re.split(r'[。．]', label, maxsplit=1)[0].strip()[:60]}）"
+            for letter, label in choices]
 
 
 def load_config(path=None):
@@ -506,6 +516,9 @@ class Runtime:
             raise ValueError("notification thread is not registered to this project")
         text = f"[{project.get('name', project['repo'])}担当kobito] {item.get('title', '')}\n{item.get('body', '')}"
         text += "\n" + "\n".join(item.get("related_links") or [])
+        templates = reply_templates(item.get("body"))
+        if templates:
+            text += "\n\n返信は、下の返信用メッセージから一つをコピーして、このスレッドに貼ってください。"
         token, blocks = None, None
         if item.get("type") in DECISION_TYPES:
             if len(text) > 12000:
@@ -532,3 +545,6 @@ class Runtime:
             if work_id:
                 db.execute("INSERT OR REPLACE INTO issues VALUES(?,?,?,?)",
                            (project["id"], work_id, channel, thread))
+        # One message per choice so a long-press copy on mobile yields exactly one reply.
+        for template in templates:
+            self.post(channel, template, thread)

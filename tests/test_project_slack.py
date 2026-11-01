@@ -396,3 +396,27 @@ def test_launch_agent_is_only_rendered_and_contains_no_secrets(setup, monkeypatc
     assert "private-test-token" not in output.read_text()
     assert "EnvironmentVariables" not in manifest
     assert main(["--config", str(config_path), "launch-agent", "--output", str(output)]) == 1
+
+
+def test_choice_question_posts_one_copyable_letter_reply_per_choice(setup):
+    runtime, _, _ = setup
+    item = {**decision_item(), "type": "decision_request",
+            "body": "どれか一つで返信してください:\nA. README.md を新規作成する。計画を出す\nB. 上の改善点リストだけで十分\nC. 別の文書を指していた"}
+    runtime.notify(item, "question.yaml")
+    question, *templates = runtime.slack.posts
+    assert "返信用メッセージ" in question["text"]
+    assert [t["text"] for t in templates] == [
+        "置き手紙: A（README.md を新規作成する）", "置き手紙: B（上の改善点リストだけで十分）",
+        "置き手紙: C（別の文書を指していた）"]
+    assert all(t["thread_ts"] == "100.000001" for t in templates)
+    reply = event(templates[0]["text"], ts="100.000009", thread_ts="100.000001")
+    reply["event"]["type"] = "message"
+    assert runtime.accept(reply)
+    runtime.process_one()
+    assert runtime.board.calls[-1][runtime.board.calls[-1].index("--body") + 1] == "A（README.md を新規作成する）"
+
+
+def test_plan_without_choices_gets_no_reply_templates(setup):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "body": "A案で進めます\n変更内容"}, "plan.yaml")
+    assert len(runtime.slack.posts) == 1
