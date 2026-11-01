@@ -1,0 +1,16 @@
+{
+  "display_information": {
+    "name": "kobito",
+    "description": "各プロジェクトのチャンネルで相談と置き手紙を受け付ける担当エージェント"
+  },
+  "features": {"bot_user": {"display_name": "kobito", "always_online": false}},
+  "oauth_config": {"scopes": {"bot": [
+    "app_mentions:read", "chat:write", "channels:read", "channels:history",
+    "groups:read", "groups:history", "bookmarks:read"
+  ]}},
+  "settings": {
+    "socket_mode_enabled": true,
+    "interactivity": {"is_enabled": true},
+    "event_subscriptions": {"bot_events": ["app_mention", "message.channels", "message.groups"]}
+  }
+}

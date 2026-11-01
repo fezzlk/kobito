@@ -6,6 +6,9 @@ kobitoが1回の実行（定期トリガーによる起動）で行う運用手�
 
 ## 前提
 
+- `KOBITO_PROJECT_ID`が設定されている実行は、先に[PROJECTS.md](./PROJECTS.md)に従い、そのProjectだけを担当する。以下の「全プロジェクト」「全候補」は、その実行では担当Project内に読み替える。候補探索・コメント確認・Boardの依頼と承認・完了後の確認も同じ範囲へ絞り、対象がなければ終了する。Projectなしの横断実行へフォールバックしない。
+- Slack経由の即時会話は相談専用のread-only実行とし、この文書の実装フローを起動しない。置き手紙と承認はProject付きのBoardキューに保存され、定期実行で本フローへ進む。
+
 - kobitoの起動指示を受けたClaude Codeセッションは、以下の手順を上から順に実行する。
 - 判断に迷う場合、または実行環境の安全運用ルール（force-push・マージ・デプロイ・削除・一定額以上の費用が発生しうる操作など）に抵触する操作が必要になった場合は、必ず該当ステップで作業を止め、「エスカレーション」に従う。
 - 本ドキュメントは汎用設計を前提とする。連携先のissueトラッカーやワークスペース固有の名称はここには書かない。
@@ -215,6 +218,8 @@ python ~/repos/human-agent-board/board.py add --direction agent-to-user \
 合わせてstatusを`decision_pending`へ更新し、issue URLと判断材料のGitHub URL等を含めて`--notify`する。復旧不能な実行エラーで、ユーザー判断では再開できない場合は`failed`として`--notify`する。
 
 ## 認可・安全性の前提
+
+**Project別Slack運用**: `scripts/project_slack.py`はSocket Modeの認証済み接続を使い、設定したworkspace ID・本人のuser ID・Projectのchannel IDを照合して受け付ける。メンションと関与中スレッドの返信だけを扱い、全発言を指示にはしない。承認は表示時の計画digestと対象メッセージにも結び付ける。書き込み先は本人のProject付きBoardキューであり、既存の「明示承認前に実装しない」「対象外の作業へ着手しない」条件を維持する。詳しくは[PROJECTS.md](./PROJECTS.md)。
 
 v1のkobitoが読み取る入力元は、issueトラッカー（ユーザーが管理するワークスペース）とhuman-agent-boardの`user-to-agent`キュー（ユーザー自身が書き込む場所）に限られる。外部からの未検証な入力（Webhook等、第三者が任意の内容を書き込める経路）は扱わない。「誰の指示で再開してよいか」の照合は、この入力元の限定によって担保する。
 
