@@ -1,0 +1,2 @@
+slack-sdk==3.46.0
+PyYAML==6.0.3

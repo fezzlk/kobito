@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "workspace_id": "TEXAMPLE",
+  "authorized_user_ids": ["UOWNER"],
+  "repos_root": "~/repos",
+  "python": "~/repos/kobito/.venv-slack/bin/python",
+  "board_cli": "~/repos/human-agent-board/board.py",
+  "state_path": "~/.local/state/kobito/project-slack.sqlite3",
+  "max_conversations_per_hour": 12,
+  "projects": [
+    {
+      "id": "project-uuid",
+      "name": "Example",
+      "repo": "example",
+      "linear_url": "https://linear.app/example/project/example-project",
+      "channel_id": null,
+      "enabled": false,
+      "work_enabled": false
+    }
+  ]
+}

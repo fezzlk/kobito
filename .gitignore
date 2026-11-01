@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv-slack/
+projects.local.json
+secrets.env

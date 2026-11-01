@@ -10,6 +10,8 @@ Linear等のissueトラッカーを定期的に自律実行で消化し、判断
 
 ## 実行手順
 
+各Linear ProjectのSlackチャンネルを、そのProject担当kobitoとの窓口にする運用は[PROJECTS.md](./PROJECTS.md)を参照。メンションでの即時相談と、定期実行で拾う「置き手紙」を両方扱う。Projectのチャンネル作成はLinearの既存連携を使い、担当・通知・会話の受付をkobito側で結び付ける。導入と認証設定は[SLACK_SETUP.md](./SLACK_SETUP.md)に記載する。
+
 kobitoが1回の起動で行う具体的な手順（issueの探索・着手可否判断・claim・作業・エスカレーション）は [OPERATING.md](./OPERATING.md) を参照。
 
 週次の技術トレンド調査、全プロジェクトとの横断適合評価、学習提案、新規プロジェクト候補の蓄積は [TECH_RADAR.md](./TECH_RADAR.md) を参照。調査結果はLinearの専用`Tech Radar`プロジェクトへ最大3件/週で保存し、通常のissue実装とは独立して実行する。
