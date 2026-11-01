@@ -51,6 +51,14 @@ python3 ~/repos/human-agent-board/board.py add \
 Project指定は環境から継承される。`--project-id`で別Projectに上書きするとBoardは拒否する。
 Project未設定の古いBoard項目・statusは推測で移管せず、Linearの所属を確認した上で移行する。
 
+## Slackに出す文章
+
+Boardの`title`・`body`はそのままSlackに投稿される。Slack向けに短く書く。
+
+- 結論を先に書く。1文は短くし、全体で10行程度に収める。
+- 箇条書きは5項目まで。詳しい内容はLinearのissueやPRに書き、本文にはリンクを置く。
+- 太字（`**`）・見出し（`#`）・箇条書き（`-`）・`コード`・`[文字](https://…)`のリンクは、受付がSlackの書式に変換する。表は使わない。
+
 ## 承認とスレッド
 
 承認ボタンは表示した計画のdigest・Project・チャンネル・元メッセージに結び付く。本文が変わった古い計画の承認は拒否する。

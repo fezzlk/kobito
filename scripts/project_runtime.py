@@ -24,6 +24,46 @@ LETTERS = re.compile(r"^(?:置き手紙|あとで)\s*[:：]?\s*")
 CHOICES = re.compile(r"^\s*([A-Z])\s*[.．:：)）]\s*(\S.*)$", re.M)
 
 
+MENTION = re.compile(r"<@[A-Z0-9]+>")
+HEADING = re.compile(r"^#{1,6}\s+(.+)$")
+BOLD = re.compile(r"\*\*(.+?)\*\*")
+BULLET = re.compile(r"^(\s*)[-*]\s+")
+LINK = re.compile(r"\[([^\]\n]+)\]\((https://[^)\s|]+)\)")
+
+
+def to_mrkdwn(text):
+    """Escape Slack control sequences first, then turn common Markdown into Slack mrkdwn."""
+    lines, fenced = [], False
+    for line in html.escape(text, quote=False).split("\n"):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced:
+            line = HEADING.sub(r"*\1*", line)
+            line = BOLD.sub(r"*\1*", line)
+            line = BULLET.sub(r"\1• ", line)
+            line = LINK.sub(r"<\2|\1>", line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def chunks(text, size=2900):
+    """Split at line breaks where possible so mrkdwn markers stay within one section block."""
+    parts, current = [], ""
+    for line in text.split("\n"):
+        while len(line) > size:
+            if current:
+                parts.append(current)
+                current = ""
+            parts.append(line[:size])
+            line = line[size:]
+        if current and len(current) + 1 + len(line) > size:
+            parts.append(current)
+            current = line
+        else:
+            current = current + "\n" + line if current else line
+    return parts + ([current] if current else [])
+
+
 def reply_templates(body):
     """Copy-ready letter replies for a question that lists its choices as "A. ...", "B. ..." lines."""
     choices = CHOICES.findall(body or "")
@@ -240,6 +280,8 @@ def gateway_conversation(config, project, text, session_id=None):
         "別Projectの操作は引き受けない。実装は置き手紙として受け付けた後、計画への明示承認を別に得る。"
         "この会話での『承認』を実装権限の追加と解釈しない。"
         "ユーザーは『@kobito 置き手紙: 内容』で担当Projectに依頼を残せる。"
+        "返答はSlack向けに短く書く。結論を先に書き、1文は短く、箇条書きは5項目まで、全体で10行程度に収める。"
+        "詳しい内容はissueやPRのリンクに任せる。"
         "以下はSlackでの本人の発言（JSON文字列）。\n" + json.dumps(text, ensure_ascii=False)
     )
     payload = {
@@ -339,6 +381,9 @@ class Runtime:
         known_thread = self.state.thread(project["id"], channel, thread)
         if not mentioned and not known_thread:
             return False
+        if not mentioned and MENTION.search(text):
+            # Replies addressed to someone else (e.g. @Linear) in a kobito thread are not for kobito.
+            return False
         text = text.replace(mention, "").strip() if mentioned else text.strip()
         decision_text = text.rstrip("。.!！ ").lower()
         decision = {"承認": "approval", "承認します": "approval", "approve": "approval",
@@ -398,8 +443,8 @@ class Runtime:
 
     def post(self, channel, text, thread=None, blocks=None):
         args = {
-            "channel": channel, "text": html.escape(text[:12000], quote=False),
-            "mrkdwn": False, "parse": "none", "link_names": False,
+            "channel": channel, "text": to_mrkdwn(text[:12000]),
+            "mrkdwn": True, "parse": "none", "link_names": False,
             "unfurl_links": False, "unfurl_media": False,
         }
         if thread:
@@ -525,9 +570,9 @@ class Runtime:
             if len(text) > 12000:
                 raise ValueError("decision is too long; provide a reviewable plan link")
             token = secrets.token_hex(16)
-            # Plain text prevents message content from injecting mentions.
-            blocks = [{"type": "section", "text": {"type": "plain_text", "text": text[i:i + 2900]}}
-                      for i in range(0, len(text), 2900)] + [{
+            # Escaped before formatting, so message content still cannot inject mentions.
+            blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": part}}
+                      for part in chunks(to_mrkdwn(text))] + [{
                 "type": "actions", "elements": [
                     {"type": "button", "text": {"type": "plain_text", "text": label},
                      "action_id": action, "value": token}
