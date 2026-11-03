@@ -71,6 +71,8 @@ workspace IDが異なるトークンや、別workspaceの状態DBを使うと受
   --linear-url https://linear.app/example/project/example-project
 ```
 
+Linearのチャンネル自動作成は新規Projectだけが対象。既存Projectには、Linearと同じ`#p-<project名>`の公開チャンネルを作り、Project URLのブックマークを追加して本人を招待する。manifestの`channels:manage`・`bookmarks:write`はこの作成用。
+
 Linearが付けたProjectへのブックマークから、既存チャンネルとの対応候補を取得する。
 
 ```bash
