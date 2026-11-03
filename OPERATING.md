@@ -64,6 +64,8 @@ python3 ~/repos/agent-kit/scripts/connectivity-preflight.py \
 
 `checks`の各能力は独立して扱う。特に`git_fetch`・`git_push`と`github_api`、`linear_read`・`linear_write`を同一視しない。
 
+PRのCI状態は、workflowの実行一覧（`gh run list --commit <head SHA>`、またはREST `GET /repos/{owner}/{repo}/actions/runs?head_sha=<head SHA>`）とcommit status（`GET /repos/{owner}/{repo}/commits/<head SHA>/status`）で確認する。注入されるfine-grainedトークンにはChecks権限を付与できないため、check-runs APIの403は接続障害として扱わず、停止・エスカレーションの理由にしない。実行一覧も取得できない場合だけ`github_api`の障害として扱う。
+
 - `overall: OK`: 通常どおり「2. 候補issueの探索」へ進む。
 - `overall: DEGRADED`: `recovery`と利用不能な能力を確認する。Linear writeを確認できない場合はissueのclaim・ラベル・status・コメントを更新できないため、**新規issueへは着手しない**。安全な読み取りと復旧調査だけを行える。
 - `overall: BLOCKED`: 候補issueを探索・claimせず、その回の実行を停止する。
