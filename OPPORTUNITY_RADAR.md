@@ -107,7 +107,7 @@ python ~/repos/human-agent-board/board.py add \
   --related-link "<Opportunity Radar project URL>"
 ```
 
-LINE上ではダイジェストとLinear URLの参照だけを提供する。現行Boardの選択操作は承認要求専用であり、自然言語による案の選択や会話は扱わない。`検証候補へ`、`保留`、`却下`はLinearで状態を更新する。未実装のボタンや会話機能があるようには案内しない。
+Slack（`#p-kobito`）ではダイジェストとLinear URLの参照だけを提供する。現行Boardの選択操作は承認要求専用であり、自然言語による案の選択や会話は扱わない。`検証候補へ`、`保留`、`却下`はLinearで状態を更新する。未実装のボタンや会話機能があるようには案内しない。
 
 ## 検証候補への昇格
 

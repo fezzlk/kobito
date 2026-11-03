@@ -68,5 +68,5 @@ Boardの`title`・`body`はそのままSlackに投稿される。Slack向けに�
 ## 運用の切り替え
 
 初期状態ではProject実行は無効。設定方法と動作確認は[SLACK_SETUP.md](SLACK_SETUP.md)を参照する。
-Slackで一つのProjectの往復が確認できるまで、従来の全体実行を無効にしたりLINE通知を一括停止したりしない。
-Project実行を有効にした後も、LINEのログイン等、通知以外の用途は変更しない。
+RJHでの往復確認（FEZ-269）の後、LINE通知は廃止した（FEZ-273）。Projectに属さない通知は`projects.json`の`default_project_id`（kobito、`#p-kobito`）のチャンネルに届く。
+LINEのログイン（usage画面）は通知とは別の用途のため残している。

@@ -1,6 +1,6 @@
 # PRIORITY TRIAGE
 
-kobitoが週1回、全プロジェクトを横断して優先度未設定のissueを集め、LINEからタップ1つで優先度を設定できるようにする運用手順。通常のissue実装を行う`OPERATING.md`（優先度順での候補選定、[FEZ-118](https://linear.app/fezzlk/issue/FEZ-118)）とは独立したパスとして実行する。
+kobitoが週1回、全プロジェクトを横断して優先度未設定のissueを集め、Slack（`#p-kobito`）からタップ1つで優先度を設定できるようにする運用手順。通常のissue実装を行う`OPERATING.md`（優先度順での候補選定、[FEZ-118](https://linear.app/fezzlk/issue/FEZ-118)）とは独立したパスとして実行する。
 
 ## 背景
 
@@ -9,7 +9,7 @@ kobitoが週1回、全プロジェクトを横断して優先度未設定のissu
 ## 目的
 
 - 優先度未設定のまま放置されるissueを減らし、`OPERATING.md`の優先度順選定が実際に機能する前提を保つ
-- ユーザーがLinearアプリで1件ずつ編集する手間を無くし、LINEのボタンタップだけで完結させる
+- ユーザーがLinearアプリで1件ずつ編集する手間を無くし、Slackのボタンタップだけで完結させる
 
 ## 安全境界
 
@@ -30,17 +30,17 @@ Linear MCPで全プロジェクトを横断し、以下を満たすissueを列�
 
 ### 2. 送信対象を選ぶ
 
-作成日時が古い順に最大12件を選ぶ（LINE Flexカルーセルの表示上限に合わせる）。13件以上ある場合、今回送らなかった残りは翌週以降も同じ「古い順」ロジックで拾われるため、追加の状態管理は不要。
+作成日時が古い順に最大12件を選ぶ（チャンネルを埋めないための上限）。13件以上ある場合、今回送らなかった残りは翌週以降も同じ「古い順」ロジックで拾われるため、追加の状態管理は不要。
 
 各issueについて`id`（LinearのUUID）・`identifier`（例: `FEZ-123`）・`title`・`project`・`url`を含むJSON配列を組み立てる。
 
-### 3. human-agent-board経由でLINEへ送る
+### 3. Slackへ送る
 
 ```bash
-echo '<手順2で組み立てたJSON配列>' | python3 ~/repos/human-agent-board/board.py priority-digest
+echo '<手順2で組み立てたJSON配列>' | ~/repos/kobito/.venv-slack/bin/python ~/repos/kobito/scripts/project_slack.py priority-digest
 ```
 
-issueごとに1枚のLINEカード（Flexバブル）が届き、「Urgent/High/Medium/Low」ボタンをタップするとその場でLinearの優先度が更新される（`ai-gateway`の`/line/webhook`が`setpriority`postbackを処理し、Linear GraphQL APIへ書き込む。詳細: `human-agent-board`リポジトリの`ai-gateway`側実装`src/routes/line_webhook.py`）。
+issueごとに1件のメッセージが`#p-kobito`（`projects.json`の`default_project_id`のチャンネル）に届く。「Urgent/High/Medium/Low」ボタンを押すと、Macの受付（`project_slack.py serve`）がLinear GraphQL APIで優先度を更新し、結果をスレッドに返す。受付には`~/.config/kobito/secrets.env`の`LINEAR_API_KEY`が必要。`id`はLinearのUUID、`identifier`は`FEZ-123`の形式でなければ送信しない。
 
 ### 4. 記録する
 

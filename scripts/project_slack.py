@@ -26,7 +26,7 @@ def load_secrets(config):
         return
     if path.stat().st_mode & 0o077:
         raise ValueError("secrets.env must be readable only by its owner (chmod 600)")
-    allowed = {"SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "AI_GATEWAY_URL", "AI_GATEWAY_SHARED_TOKEN"}
+    allowed = {"SLACK_APP_TOKEN", "SLACK_BOT_TOKEN", "AI_GATEWAY_URL", "AI_GATEWAY_SHARED_TOKEN", "LINEAR_API_KEY"}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -292,6 +292,7 @@ def build_parser():
     commands.add_parser("next-project")
     commands.add_parser("serve")
     commands.add_parser("notify")
+    commands.add_parser("priority-digest")
     commands.add_parser("inbox")
     launch = commands.add_parser("launch-agent")
     launch.add_argument("--output", required=True, help="Render a plist; never install or start it")
@@ -345,6 +346,12 @@ def main(argv=None):
             client = slack_client()
             checked_identity(config, client)
             Runtime(config, state_for(config), client).notify(payload["item"], payload["filename"])
+        elif args.command == "priority-digest":
+            issues = json.loads(sys.stdin.read(200000))
+            client = slack_client()
+            checked_identity(config, client)
+            posted = Runtime(config, state_for(config), client).post_priority_digest(issues)
+            print(json.dumps({"posted": posted}))
         elif args.command == "inbox":
             with state_for(config).connect() as db:
                 # Diagnostic metadata only; never echo user messages or secrets.

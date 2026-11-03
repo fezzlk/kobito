@@ -450,3 +450,118 @@ def test_thread_reply_addressed_to_another_app_is_ignored(setup):
     reply["event"]["type"] = "message"
     assert not runtime.accept(reply)
     assert len(calls) == 1
+
+
+def with_default(runtime):
+    runtime.config["default_project_id"] = "project-a"
+    return runtime
+
+
+def test_projectless_notification_goes_to_default_project_channel(setup):
+    runtime, _, _ = setup
+    item = {"type": "action_required", "title": "kobitoの稼働確認", "body": "対処"}
+    with pytest.raises(ValueError):
+        runtime.notify(item, "health.yaml")
+    with_default(runtime).notify(item, "health.yaml")
+    assert runtime.slack.posts[0]["channel"] == "CONE"
+
+
+def test_projectless_decision_is_answered_without_project_scope(setup):
+    runtime, _, _ = setup
+    with_default(runtime).notify({**decision_item(), "project_id": None}, "plan.yaml")
+    assert runtime.accept_action(action(runtime))
+    runtime.process_one()
+    args = runtime.board.calls[0]
+    assert args[:2] == ("respond", "plan.yaml")
+    assert "--project-id" not in args
+
+
+def test_projectless_items_are_retried_from_the_outbox(setup):
+    runtime, _, _ = setup
+    item = {"type": "fyi", "title": "週次", "body": "Radar"}
+    class PendingBoard:
+        def call(self, *args):
+            if args[0] == "notifications":
+                return json.dumps([{"id": "one", "item": item, "filename": "fyi.yaml"}])
+            return ""
+    runtime.board = PendingBoard()
+    assert runtime.sync_notifications() == 0
+    assert runtime.slack.posts == []
+    with_default(runtime).sync_notifications()
+    assert runtime.slack.posts[0]["channel"] == "CONE"
+
+
+def test_default_project_must_be_enabled(setup):
+    runtime, _, tmp_path = setup
+    config = copy.deepcopy(runtime.config)
+    config.pop("config_path")
+    config["default_project_id"] = "missing"
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="default_project_id"):
+        load_config(path)
+
+
+ISSUE = {"id": "0f0e0d0c-0b0a-4908-8706-050403020100", "identifier": "FEZ-273",
+         "title": "LINEの退役", "project": "kobito", "url": "https://linear.app/test/issue/FEZ-273/x"}
+
+
+def priority_action(runtime, value=2, **changes):
+    with runtime.state.connect() as db:
+        saved = dict(db.execute("SELECT * FROM priorities ORDER BY rowid DESC LIMIT 1").fetchone())
+    payload = {"team": {"id": "TOWNER"}, "user": {"id": "UOWNER"},
+               "channel": {"id": saved["channel"]}, "container": {"message_ts": saved["message"]},
+               "actions": [{"action_id": f"kobito_priority_{value}", "value": saved["token"],
+                            "action_ts": "200.000001"}]}
+    payload.update(changes)
+    return payload
+
+
+def test_priority_digest_posts_buttons_and_updates_linear_on_click(setup):
+    runtime, _, _ = setup
+    updates = []
+    runtime.linear = lambda issue_id, priority: updates.append((issue_id, priority))
+    assert with_default(runtime).post_priority_digest([ISSUE]) == 1
+    post = runtime.slack.posts[0]
+    assert post["channel"] == "CONE"
+    buttons = post["blocks"][-1]["elements"]
+    assert [b["text"]["text"] for b in buttons] == ["Urgent", "High", "Medium", "Low"]
+    assert ISSUE["id"] not in json.dumps(post)
+    assert not runtime.accept_action(priority_action(runtime, user={"id": "UOTHER"}))
+    assert not runtime.accept_action(priority_action(runtime, channel={"id": "CTWO"}))
+    assert not runtime.accept_action(priority_action(runtime, container={"message_ts": "999.1"}))
+    forged = priority_action(runtime)
+    forged["actions"][0]["value"] = "0" * 32
+    assert not runtime.accept_action(forged)
+    assert runtime.accept_action(priority_action(runtime))
+    assert not runtime.accept_action(priority_action(runtime))
+    runtime.process_one()
+    assert updates == [(ISSUE["id"], 2)]
+    assert runtime.slack.posts[-1]["thread_ts"] == "100.000001"
+    assert "FEZ-273 の優先度を High" in runtime.slack.posts[-1]["text"]
+
+
+def test_priority_digest_rejects_malformed_issues_and_reports_linear_failure(setup):
+    runtime, _, _ = setup
+    with pytest.raises(ValueError):
+        with_default(runtime).post_priority_digest([{**ISSUE, "id": "../x"}])
+    def fail(issue_id, priority):
+        raise RuntimeError("secret detail")
+    runtime.linear = fail
+    runtime.post_priority_digest([ISSUE])
+    runtime.accept_action(priority_action(runtime))
+    runtime.process_one()
+    assert "処理を完了できませんでした" in runtime.slack.posts[-1]["text"]
+    assert "secret" not in json.dumps(runtime.slack.posts)
+
+
+def test_existing_decision_table_is_migrated(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE decisions (token TEXT PRIMARY KEY, project TEXT, channel TEXT, thread TEXT, "
+               "filename TEXT, digest TEXT, message TEXT)")
+    db.execute("INSERT INTO decisions VALUES('t','project-a','CONE','1.1','plan.yaml','d','1.2')")
+    db.commit()
+    db.close()
+    assert State(path).decision("t")["unscoped"] == 0

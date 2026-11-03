@@ -8,7 +8,7 @@ Linearで作成済みのProjectと、そのProjectに接続されたSlackチャ�
 - human-agent-boardのProject指定・通知command・Slack承認対応版、kobito本体、ai-gatewayのProject実行対応版を反映する。
 - 受付は既存Mac上で一つだけ動かす。Socket Modeなので新しい公開Webhookやクラウドサービスは不要。
 - 会話は既存ai-gatewayのClaude実行を利用する。MacのClaude CLIが`--restricted`をサポートすることを確認する。
-- この文書の操作でCloud Runを自動デプロイしたりLINEを一括停止したりはしない。Gatewayの反映には既存cloudbuild.yamlと既存トリガーを使い、費用影響を確認してから進める。
+- この文書の操作でCloud Runを自動デプロイしたりはしない。Gatewayの反映には既存cloudbuild.yamlと既存トリガーを使い、費用影響を確認してから進める。
 
 ## Slackアプリを一つ用意する
 
@@ -37,17 +37,18 @@ touch ~/.config/kobito/secrets.env
 chmod 600 ~/.config/kobito/secrets.env
 ```
 
-`secrets.env`をローカルエディタで開き、値を設定する。シェルの`source`では実行せず、受付が許可した4項目だけを読み込む。引用符や`export`は付けない。
+`secrets.env`をローカルエディタで開き、値を設定する。シェルの`source`では実行せず、受付が許可した次の項目だけを読み込む（`LINEAR_API_KEY`は優先度トリアージを使うときだけ）。引用符や`export`は付けない。
 
 ```text
 SLACK_APP_TOKEN=xapp-...
 SLACK_BOT_TOKEN=xoxb-...
 AI_GATEWAY_URL=https://your-existing-gateway
 AI_GATEWAY_SHARED_TOKEN=...
+LINEAR_API_KEY=lin_api_...
 ```
 
 `AI_GATEWAY_URL`は既存サービスのベースURL。新規サービスを作らない。
-`projects.json`にはworkspace ID、許可する本人のSlackメンバーID、各Linear ProjectのID・repo・URLを設定する。
+`projects.json`にはworkspace ID、許可する本人のSlackメンバーID、各Linear ProjectのID・repo・URLを設定する。Projectに属さない通知の送り先は`default_project_id`（有効なProjectのID）で指定する。
 IDは表示名から推測しない。次の読み取りコマンドで、Botトークンが接続するworkspace IDと名前を確認できる。
 
 ```bash
@@ -135,8 +136,8 @@ python3 ~/repos/kobito/scripts/project_slack.py next-project
 既存の無指定Board CLIの`list`はProject付きの依頼を表示しない。全体を見る管理用の読み取りだけ`--all-projects`を使う。
 古いProject未設定の依頼・statusは、Linearの所属と計画を確認して移行する。実行中のworktree、ブランチ、既存PRを捨てない。
 
-LINE通知の停止は、Projectごとの相談→置き手紙→計画→承認→作業→PRの往復確認後に行う。
-通知方式は実行ごとの環境で切り替わるため、LINEのログイン等、他の用途の設定は削除しない。
+LINE通知は廃止した（FEZ-273）。Board の通知は既定で `HUMAN_AGENT_NOTIFICATION_COMMAND`（このリポジトリの `project_slack.py notify`）に渡る。Project実行では受付がこの値を設定する。それ以外（全体実行・Claude/Codexの作業）では`~/.zshenv`で設定する。Projectに属さない項目は`default_project_id`のチャンネルに届く。未設定で送れなかった通知はBoardの未送信一覧に残り、受付が1分ごとに再送する。
+優先度トリアージのボタン（`PRIORITY_TRIAGE.md`）を使うには、`secrets.env`に`LINEAR_API_KEY`を追加する。値は会話・issue・リポジトリに貼らない。
 
 ## 費用と参照
 
