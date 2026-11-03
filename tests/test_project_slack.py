@@ -623,3 +623,66 @@ def test_existing_decision_table_is_migrated(tmp_path):
     db.commit()
     db.close()
     assert State(path).decision("t")["unscoped"] == 0
+
+
+def capture_exec(runtime, tmp_path, monkeypatch, argv, mode="work"):
+    runtime.config["state_path"] = str(tmp_path / "state.sqlite3")
+    captured = {}
+    monkeypatch.setattr("project_slack.os.chdir", lambda path: captured.update(cwd=path))
+    monkeypatch.setattr("project_slack.os.execvpe", lambda cmd, argv, env: captured.update(argv=argv, env=env))
+    execute(runtime.config, Namespace(project_id="project-a", repo="a", mode=mode, argv=argv))
+    return captured
+
+
+def test_codex_work_gets_project_scope_in_front_of_its_prompt(setup, monkeypatch):
+    runtime, _, tmp_path = setup
+    argv = ["/usr/local/bin/codex", "exec", "--json", "-s", "danger-full-access", "OPERATING.mdを一巡"]
+    captured = capture_exec(runtime, tmp_path, monkeypatch, argv)
+    assert captured["argv"][:5] == argv[:5]
+    assert "--append-system-prompt" not in captured["argv"]
+    prompt = captured["argv"][-1]
+    assert prompt.startswith("担当Project ID=project-a") and prompt.endswith("OPERATING.mdを一巡")
+    assert captured["env"]["KOBITO_PROJECT_ID"] == "project-a"
+
+
+def test_claude_work_still_uses_append_system_prompt(setup, monkeypatch):
+    runtime, _, tmp_path = setup
+    captured = capture_exec(runtime, tmp_path, monkeypatch, ["claude", "-p", "work"])
+    assert captured["argv"][captured["argv"].index("--append-system-prompt") + 1].startswith("担当Project")
+
+
+@pytest.mark.parametrize("argv,mode", [
+    (["codex", "exec", "--json", "相談"], "conversation"),
+    (["codex", "login", "x"], "work"),
+    (["codex", "exec", "--json"], "work"),
+    (["/bin/sh", "-c", "codex"], "work"),
+])
+def test_unexpected_executor_shapes_are_refused(setup, monkeypatch, argv, mode):
+    runtime, _, tmp_path = setup
+    with pytest.raises(ValueError):
+        capture_exec(runtime, tmp_path, monkeypatch, argv, mode)
+
+
+def write_config(runtime, tmp_path, **values):
+    config = {**copy.deepcopy(runtime.config), **values}
+    config.pop("config_path")
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    return path
+
+
+@pytest.mark.parametrize("values", [{"agent": "gpt"}, {"codex_bin": "codex"}])
+def test_agent_settings_are_validated(setup, values):
+    runtime, _, tmp_path = setup
+    with pytest.raises(ValueError):
+        load_config(write_config(runtime, tmp_path, **values))
+
+
+def test_agent_command_reports_the_configured_executor(setup, capsys):
+    from project_slack import main
+    runtime, _, tmp_path = setup
+    assert main(["--config", str(write_config(runtime, tmp_path)), "agent"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"agent": "claude"}
+    path = write_config(runtime, tmp_path, agent="codex", codex_bin="/opt/codex")
+    assert main(["--config", str(path), "agent"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"agent": "codex", "bin": "/opt/codex"}

@@ -48,7 +48,7 @@ LINEAR_API_KEY=lin_api_...
 ```
 
 `AI_GATEWAY_URL`は既存サービスのベースURL。新規サービスを作らない。受付は即時会話にGatewayを使わないが、手動での実行確認などのために残している。
-`projects.json`にはworkspace ID、許可する本人のSlackメンバーID、各Linear ProjectのID・repo・URLを設定する。Projectに属さない通知の送り先は`default_project_id`（有効なProjectのID）で指定する。
+`projects.json`にはworkspace ID、許可する本人のSlackメンバーID、各Linear ProjectのID・repo・URLを設定する。Projectに属さない通知の送り先は`default_project_id`（有効なProjectのID）で指定する。定期実行のagentは`agent`（`claude`/`codex`）で切り替える（詳しくは`PROJECTS.md`）。
 IDは表示名から推測しない。次の読み取りコマンドで、Botトークンが接続するworkspace IDと名前を確認できる。
 
 ```bash
