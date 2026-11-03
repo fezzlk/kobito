@@ -29,6 +29,11 @@ HEADING = re.compile(r"^#{1,6}\s+(.+)$")
 BOLD = re.compile(r"\*\*(.+?)\*\*")
 BULLET = re.compile(r"^(\s*)[-*]\s+")
 LINK = re.compile(r"\[([^\]\n]+)\]\((https://[^)\s|]+)\)")
+PRIORITIES = {1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}
+PRIORITY_ACTION = re.compile(r"kobito_priority_([1-4])\Z")
+ISSUE_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
+ISSUE_KEY = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+\Z")
+LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
 
 def to_mrkdwn(text):
@@ -102,6 +107,9 @@ def load_config(path=None):
         ids.add(project["id"])
         if channel:
             channels.add(channel)
+    default = config.get("default_project_id")
+    if default is not None and not any(p["id"] == default and p.get("enabled") for p in config.get("projects", [])):
+        raise ValueError("default_project_id must name an enabled project")
     config["config_path"] = str(path.resolve())
     return config
 
@@ -113,6 +121,30 @@ def project_by_id(config, project_id, require_work=False):
                 raise ValueError("project work is paused")
             return project
     raise ValueError("project is not registered or enabled")
+
+
+def notification_project(config, item):
+    """Board items without a project (global kobito runs, other agents) go to the default project's channel."""
+    return project_by_id(config, item.get("project_id") or config.get("default_project_id"))
+
+
+def set_linear_priority(issue_id, priority):
+    key = os.environ.get("LINEAR_API_KEY", "")
+    if not key:
+        raise ValueError("LINEAR_API_KEY is not configured")
+    body = {
+        "query": "mutation($id: String!, $priority: Int!) "
+                 "{ issueUpdate(id: $id, input: {priority: $priority}) { success } }",
+        "variables": {"id": issue_id, "priority": priority},
+    }
+    request = urllib.request.Request(
+        LINEAR_GRAPHQL_URL, data=json.dumps(body).encode(),
+        headers={"Authorization": key, "Content-Type": "application/json"},
+    )
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
+        result = json.loads(response.read())
+    if not result.get("data", {}).get("issueUpdate", {}).get("success"):
+        raise RuntimeError("Linear did not confirm the priority update")
 
 
 def item_digest(item):
@@ -151,7 +183,15 @@ class State:
                     project TEXT, filename TEXT, digest TEXT,
                     PRIMARY KEY(project, filename)
                 );
+                CREATE TABLE IF NOT EXISTS priorities (
+                    token TEXT PRIMARY KEY, issue_id TEXT, identifier TEXT,
+                    channel TEXT, message TEXT
+                );
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(decisions)")}
+            if "unscoped" not in columns:
+                # 1 = the Board item has no project; respond without a project scope.
+                db.execute("ALTER TABLE decisions ADD COLUMN unscoped INTEGER NOT NULL DEFAULT 0")
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -223,6 +263,11 @@ class State:
     def decision(self, token):
         with self.connect() as db:
             row = db.execute("SELECT * FROM decisions WHERE token=?", (token,)).fetchone()
+        return dict(row) if row else None
+
+    def priority(self, token):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM priorities WHERE token=?", (token,)).fetchone()
         return dict(row) if row else None
 
     def decision_for_thread(self, project, channel, thread):
@@ -313,8 +358,9 @@ def gateway_conversation(config, project, text, session_id=None):
 
 
 class Runtime:
-    def __init__(self, config, state, slack, board=None, conversation=None, bot_user_id=None):
-        self.config, self.state, self.slack = config, state, slack
+    def __init__(self, config, state, slack, board=None, conversation=None, bot_user_id=None,
+                 linear=set_linear_priority):
+        self.config, self.state, self.slack, self.linear = config, state, slack, linear
         with state.connect() as db:
             previous = db.execute("SELECT value FROM settings WHERE key='workspace_id'").fetchone()
             if previous and previous["value"] != config["workspace_id"]:
@@ -426,6 +472,9 @@ class Runtime:
         if team != self.config["workspace_id"] or user not in self.config["authorized_user_ids"] or len(actions) != 1:
             return False
         action = actions[0]
+        priority = PRIORITY_ACTION.match(action.get("action_id") or "")
+        if priority:
+            return self.accept_priority(action, channel, message, user, int(priority.group(1)))
         decision = {"kobito_approve": "approval", "kobito_reject": "rejection"}.get(action.get("action_id"))
         saved = self.state.decision(action.get("value")) if decision else None
         if not saved or saved["channel"] != channel or saved["message"] != message:
@@ -440,6 +489,52 @@ class Runtime:
             "decision:" + saved["token"], saved["project"], channel, saved["thread"], "decision",
             {"token": saved["token"], "decision": decision, "user": user},
         )
+
+    def accept_priority(self, action, channel, message, user, value):
+        saved = self.state.priority(action.get("value"))
+        if not saved or saved["channel"] != channel or saved["message"] != message:
+            return False
+        try:
+            project = project_by_id(self.config, self.config.get("default_project_id"))
+        except ValueError:
+            return False
+        if project["channel_id"] != channel:
+            return False
+        # The action timestamp makes Socket Mode retries idempotent while allowing a later correction.
+        stamp = action.get("action_ts") or ""
+        if not TS_RE.fullmatch(stamp):
+            return False
+        return self.state.enqueue(
+            f"priority:{saved['token']}:{stamp}", project["id"], channel, message, "priority",
+            {"token": saved["token"], "priority": value, "user": user},
+        )
+
+    def post_priority_digest(self, issues):
+        """Post one message per issue with Urgent/High/Medium/Low buttons to the default project's channel."""
+        project = project_by_id(self.config, self.config.get("default_project_id"))
+        posted = 0
+        for issue in issues[:12]:
+            if not ISSUE_UUID.fullmatch(str(issue.get("id", ""))) or not ISSUE_KEY.fullmatch(str(issue.get("identifier", ""))):
+                raise ValueError("each issue needs a Linear UUID and identifier")
+            text = f"**{issue['identifier']}** {str(issue.get('title', ''))[:200]}"
+            if issue.get("project"):
+                text += f"\n{str(issue['project'])[:100]}"
+            if str(issue.get("url", "")).startswith("https://linear.app/"):
+                text += "\n" + issue["url"]
+            token = secrets.token_hex(16)
+            blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": to_mrkdwn(text)}}, {
+                "type": "actions", "elements": [
+                    {"type": "button", "text": {"type": "plain_text", "text": label},
+                     "action_id": f"kobito_priority_{value}", "value": token}
+                    for value, label in PRIORITIES.items()
+                ],
+            }]
+            response = self.post(project["channel_id"], "優先度未設定: " + text, blocks=blocks)
+            with self.state.connect() as db:
+                db.execute("INSERT INTO priorities VALUES(?,?,?,?,?)",
+                           (token, issue["id"], issue["identifier"], project["channel_id"], response["ts"]))
+            posted += 1
+        return posted
 
     def post(self, channel, text, thread=None, blocks=None):
         args = {
@@ -482,13 +577,18 @@ class Runtime:
                     result = {"text": "置き手紙を受け取りました。このProjectの定期実行で確認します。実装前に必要な計画・承認をここで確認します。"}
                 elif item["kind"] == "decision":
                     saved = self.state.decision(payload["token"])
+                    scope = [] if saved["unscoped"] else ["--project-id", project["id"]]
                     self.board.call(
                         "respond", saved["filename"], "--decision", payload["decision"], "--via", "Slack",
-                        "--project-id", project["id"], "--expected-digest", saved["digest"],
+                        *scope, "--expected-digest", saved["digest"],
                         "--response-id", "slack-" + saved["token"],
                     )
                     label = "承認" if payload["decision"] == "approval" else "却下"
                     result = {"text": label + "を記録しました。担当kobitoが次の定期実行で確認します。"}
+                elif item["kind"] == "priority":
+                    saved = self.state.priority(payload["token"])
+                    self.linear(saved["issue_id"], payload["priority"])
+                    result = {"text": f"{saved['identifier']} の優先度を {PRIORITIES[payload['priority']]} にしました。"}
                 else:
                     thread = self.state.thread(project["id"], item["channel"], item["thread"])
                     result = self.conversation(self.config, project, payload["text"], thread["session"])
@@ -521,7 +621,7 @@ class Runtime:
         for pending in json.loads(self.board.call("notifications")):
             item = pending["item"]
             try:
-                project_by_id(self.config, item.get("project_id"))
+                notification_project(self.config, item)
             except ValueError:
                 continue
             try:
@@ -541,7 +641,7 @@ class Runtime:
         return failures
 
     def _notify(self, item, filename):
-        project = project_by_id(self.config, item.get("project_id"))
+        project = notification_project(self.config, item)
         digest = item_digest(item)
         with self.state.connect() as db:
             previous = db.execute("SELECT digest FROM notifications WHERE project=? AND filename=?",
@@ -584,8 +684,10 @@ class Runtime:
         with self.state.connect() as db:
             db.execute("INSERT OR IGNORE INTO threads VALUES(?,?,?,NULL)", (project["id"], channel, thread))
             if token:
-                db.execute("INSERT INTO decisions VALUES(?,?,?,?,?,?,?)",
-                           (token, project["id"], channel, thread, filename, item_digest(item), response["ts"]))
+                db.execute("INSERT INTO decisions(token,project,channel,thread,filename,digest,message,unscoped) "
+                           "VALUES(?,?,?,?,?,?,?,?)",
+                           (token, project["id"], channel, thread, filename, item_digest(item), response["ts"],
+                            0 if item.get("project_id") else 1))
             db.execute("INSERT OR REPLACE INTO notifications VALUES(?,?,?)",
                        (project["id"], filename, digest))
             if work_id:

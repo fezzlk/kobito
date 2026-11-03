@@ -37,9 +37,9 @@ python ~/repos/human-agent-board/board.py status set \
 - `completed`: kobitoとしての処理と後続確認が完了
 - `failed`: 回復できない失敗で停止
 
-`researching`・`implementing`・`verifying`などの細かな途中経過は`--notify`を付けず、スナップショットだけを更新する。`decision_pending`・`pr_open`・`completed`・`failed`など、ユーザーが知る意味のある遷移だけ`--notify`を付ける。これによりLINE通知過多を避ける。ユーザーはLINE Botへ「kobito状況」と送ることで、通知されない途中経過も確認できる。
+`researching`・`implementing`・`verifying`などの細かな途中経過は`--notify`を付けず、スナップショットだけを更新する。`decision_pending`・`pr_open`・`completed`・`failed`など、ユーザーが知る意味のある遷移だけ`--notify`を付ける。これにより通知過多を避ける。通知はSlackに届く（Project付きの実行は各Projectのチャンネル、Projectなしの実行は`#p-kobito`）。
 
-現在状態は同じissueの更新で上書きする。`completed`・`failed`の履歴ファイルは自動削除せず保持し、通常の一覧とLINE返信では直近5件だけを表示する。
+現在状態は同じissueの更新で上書きする。`completed`・`failed`の履歴ファイルは自動削除せず保持し、通常の一覧では直近5件だけを表示する。
 
 ## 手順
 
@@ -136,8 +136,8 @@ python ~/repos/human-agent-board/board.py resolve \
 
 human-agent-boardの`user-to-agent`キューに、このissueに対する承認（`related-link`がこのissueのURLと一致するもの）があるか確認する。加えて、「1-2. 関与中issueのコメント確認」で見つけた、このissueへの新規Linearコメント（直近statusの`updated_at`より新しいもの）があれば内容を読み、承認・却下・修正指示のいずれかとして扱えないか判断する。
 
-- 承認あり（LINEボタン、または明確な承認の意思を示すコメント）: 先に「3-2. 通常の着手可否判断」を現在のissue内容で再実施する。対象外条件に該当しなければ、ラベルを`kobito:in-progress`に戻し、statusを`researching`へ更新し、対応する`user-to-agent`エントリがあれば`complete`した上で「5. 作業」に進む（計画は既に`agent-to-user`とLinearコメントへ書いた内容のまま進めてよく、あらためて4を経由する必要はない）。実機・現物確認を含む対象外条件に該当する場合は、承認済みでも再開せず、人間が扱うissueとして残す。
-- 却下あり（LINEボタン、または明確な却下の意思を示すコメント）: `kobito:plan-pending`ラベルを外し、このissueへの着手を取りやめる。再度plan_requestは書かない。
+- 承認あり（Slackの承認ボタン、または明確な承認の意思を示すコメント）: 先に「3-2. 通常の着手可否判断」を現在のissue内容で再実施する。対象外条件に該当しなければ、ラベルを`kobito:in-progress`に戻し、statusを`researching`へ更新し、対応する`user-to-agent`エントリがあれば`complete`した上で「5. 作業」に進む（計画は既に`agent-to-user`とLinearコメントへ書いた内容のまま進めてよく、あらためて4を経由する必要はない）。実機・現物確認を含む対象外条件に該当する場合は、承認済みでも再開せず、人間が扱うissueとして残す。
+- 却下あり（Slackの却下ボタン、または明確な却下の意思を示すコメント）: `kobito:plan-pending`ラベルを外し、このissueへの着手を取りやめる。再度plan_requestは書かない。
 - コメントはあるが意図が不明瞭: 憶測で進めず、このissueには今回は着手しない（追加の質問や催促はしない）。
 - 承認・却下・新規コメントのいずれも無し: このissueには今回は着手せず、次の候補に進む（再度plan_requestは書かない。催促は行わない）。
 
@@ -223,9 +223,9 @@ python ~/repos/human-agent-board/board.py add --direction agent-to-user \
 
 v1のkobitoが読み取る入力元は、issueトラッカー（ユーザーが管理するワークスペース）とhuman-agent-boardの`user-to-agent`キュー（ユーザー自身が書き込む場所）に限られる。外部からの未検証な入力（Webhook等、第三者が任意の内容を書き込める経路）は扱わない。「誰の指示で再開してよいか」の照合は、この入力元の限定によって担保する。
 
-**例外（LINE Bot経由の承認/却下、2026-08-18〜）**: `human-agent-board`の`agent-to-user`書き込み時、`ai-gateway`の`/line/webhook`経由でLINEへ通知が送られ、ユーザーはLINE上のボタンから承認/却下できる（FEZ-91）。このルートは技術的にはWebhookだが、(1) LINEのX-Line-Signatureによる署名検証、(2) 送信元LINE userIdが固定の`LINE_AUTHORIZED_USER_ID`（ユーザー本人）と一致することの確認、の二重チェックにより、実質的に「ユーザー自身が書き込む」のと同じ信頼境界を保っている。第三者が任意の内容を注入できる経路ではないため、上記の原則には抵触しない。詳細: `human-agent-board`リポジトリの`ai-gateway`側実装（`src/routes/line_webhook.py`）。
+Slackの承認・却下ボタンは、Socket Modeの認証済み接続で受け、workspace ID・本人のuser ID・チャンネル・対象メッセージ・計画digestを照合してからBoardに書き込む。外部から任意の内容を書き込める経路ではないため、上記の原則には抵触しない。LINE Bot経由の承認（2026-08-18〜）は2026-11に廃止した（FEZ-273）。
 
 ## 対象外（v1のスコープ外）
 
 - マージ・デプロイなど、PR作成より先の操作
-- issueトラッカー・human-agent-board（LINE Bot経由の承認/却下を含む）以外からの指示の受け付け
+- issueトラッカー・human-agent-board（Slack経由の承認/却下を含む）以外からの指示の受け付け

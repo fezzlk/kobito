@@ -6,7 +6,7 @@ Linear等のissueトラッカーを定期的に自律実行で消化し、判断
 
 判断・確認が必要な場面は [human-agent-board](https://github.com/fezzlk/human-agent-board) 経由でユーザーへエスカレーションする。連携先はLinearに限定しない。
 
-作業中はissue単位の状態（調査中・実装中・検証中・判断待ち・PR待ち等）をhuman-agent-boardへ上書きし、重要な状態遷移だけLINEへ通知する。ユーザーはLINE Botへ「kobito状況」と送ることで、進行中作業と直近の完了・失敗をいつでも確認できる。タスク・優先度・正式な完了状態の正本はissueトラッカー、human-agent-boardの状態はリアルタイム表示用のスナップショットとする。
+作業中はissue単位の状態（調査中・実装中・検証中・判断待ち・PR待ち等）をhuman-agent-boardへ上書きし、重要な状態遷移だけSlackへ通知する（Projectごとのチャンネル、Projectなしは`#p-kobito`）。タスク・優先度・正式な完了状態の正本はissueトラッカー、human-agent-boardの状態はリアルタイム表示用のスナップショットとする。
 
 ## 実行手順
 
@@ -18,7 +18,7 @@ kobitoが1回の起動で行う具体的な手順（issueの探索・着手可�
 
 週次のサービス・事業アイデア生成は [OPPORTUNITY_RADAR.md](./OPPORTUNITY_RADAR.md) を参照。`Tech Radar`、全プロジェクト、既存issue、運用上の詰まりを横断し、本命・越境・ワイルドカードを原則1件ずつLinearの専用`Opportunity Radar`プロジェクトへ保存する。アイデアは自動実装せず、ユーザーが検証候補にしたものだけ次の計画へ進める。
 
-週次の優先度未設定issue棚卸しは [PRIORITY_TRIAGE.md](./PRIORITY_TRIAGE.md) を参照。全プロジェクトを横断して優先度が`None`のissueを集め、LINEのカードからタップ1つでLinearの優先度を設定できるようにする。
+週次の優先度未設定issue棚卸しは [PRIORITY_TRIAGE.md](./PRIORITY_TRIAGE.md) を参照。全プロジェクトを横断して優先度が`None`のissueを集め、Slackのボタンからタップ1つでLinearの優先度を設定できるようにする。
 
 ## 実行基盤
 
