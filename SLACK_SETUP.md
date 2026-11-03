@@ -7,7 +7,7 @@ Linearで作成済みのProjectと、そのProjectに接続されたSlackチャ�
 
 - human-agent-boardのProject指定・通知command・Slack承認対応版、kobito本体、ai-gatewayのProject実行対応版を反映する。
 - 受付は既存Mac上で一つだけ動かす。Socket Modeなので新しい公開Webhookやクラウドサービスは不要。
-- 会話は既存ai-gatewayのClaude実行を利用する。MacのClaude CLIが`--restricted`をサポートすることを確認する。
+- 即時会話は、受付がMac上で`project_slack.py exec --mode conversation`を直接起動して実行する（Gatewayを経由しない、FEZ-281）。MacのClaude CLIが`--restricted`をサポートすることを確認する。claudeの場所は`projects.json`の`claude_bin`で指定する（既定`~/.local/bin/claude`）。
 - この文書の操作でCloud Runを自動デプロイしたりはしない。Gatewayの反映には既存cloudbuild.yamlと既存トリガーを使い、費用影響を確認してから進める。
 
 ## Slackアプリを一つ用意する
@@ -47,7 +47,7 @@ AI_GATEWAY_SHARED_TOKEN=...
 LINEAR_API_KEY=lin_api_...
 ```
 
-`AI_GATEWAY_URL`は既存サービスのベースURL。新規サービスを作らない。
+`AI_GATEWAY_URL`は既存サービスのベースURL。新規サービスを作らない。受付は即時会話にGatewayを使わないが、手動での実行確認などのために残している。
 `projects.json`にはworkspace ID、許可する本人のSlackメンバーID、各Linear ProjectのID・repo・URLを設定する。Projectに属さない通知の送り先は`default_project_id`（有効なProjectのID）で指定する。
 IDは表示名から推測しない。次の読み取りコマンドで、Botトークンが接続するworkspace IDと名前を確認できる。
 
@@ -142,7 +142,7 @@ LINE通知は廃止した（FEZ-273）。Board の通知は既定で `HUMAN_AGEN
 ## 費用と参照
 
 Slack・Linearの無料プラン内で使う構成。新しい有料API契約やクラウド常駐サービスは追加しない。
-会話は既存のClaude利用枠とGatewayリクエストを消費するため、既存の総利用量が0円になるという意味ではない。Cloud Runの本番設定・実行枠を変える前に費用を確認する。
+会話は既存のClaude利用枠を消費するため、既存の総利用量が0円になるという意味ではない。Cloud Runの本番設定・実行枠を変える前に費用を確認する。
 
 - [LinearのProjectチャンネル自動作成](https://linear.app/docs/slack#project-slack-channels)
 - [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/)

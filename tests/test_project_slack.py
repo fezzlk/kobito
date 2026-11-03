@@ -341,22 +341,80 @@ def test_background_work_lock_is_not_stolen_by_another_process(setup, monkeypatc
         with pytest.raises(WorkSlotBusy): execute(runtime.config, args)
 
 
-def test_gateway_does_not_follow_redirects_with_its_bearer_token(monkeypatch):
+def test_linear_update_does_not_follow_redirects_with_its_key(monkeypatch):
     import io
-    from project_runtime import NoRedirect, gateway_conversation
-    monkeypatch.setenv("AI_GATEWAY_URL", "https://gateway.example")
-    monkeypatch.setenv("AI_GATEWAY_SHARED_TOKEN", "private-test-token")
+    from project_runtime import NoRedirect, set_linear_priority
+    monkeypatch.setenv("LINEAR_API_KEY", "lin_api_test")
     class Opener:
         def open(self, request, timeout):
-            assert request.full_url == "https://gateway.example/api/run"
-            assert json.loads(request.data)["execution_mode"] == "conversation"
-            return io.BytesIO(b'data: {"type":"result","result":"answer"}\n\n')
+            assert request.full_url == "https://api.linear.app/graphql"
+            assert json.loads(request.data)["variables"] == {"id": "issue", "priority": 2}
+            return io.BytesIO(b'{"data":{"issueUpdate":{"success":true}}}')
     def build_opener(handler):
         assert isinstance(handler, NoRedirect)
         assert handler.redirect_request(None, None, 302, "redirect", {}, "https://other.example") is None
         return Opener()
     monkeypatch.setattr("project_runtime.urllib.request.build_opener", build_opener)
-    assert gateway_conversation({}, {"id": "project-a", "repo": "a"}, "hello")["text"] == "answer"
+    set_linear_priority("issue", 2)
+
+
+SESSION = "0f0e0d0c-0b0a-4908-8706-050403020100"
+
+
+def run_conversation(monkeypatch, tmp_path, result=None, session=None, returncode=0, stdout=None):
+    import subprocess
+    from project_runtime import local_conversation
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        output = stdout if stdout is not None else json.dumps(result or {})
+        return subprocess.CompletedProcess(command, returncode, output, "secret stderr")
+    monkeypatch.setattr("project_runtime.subprocess.run", run)
+    config = {"config_path": str(tmp_path / "config.json"), "python": "/venv/python", "claude_bin": "/bin/claude"}
+    answer = local_conversation(config, {"id": "project-a", "repo": "a"}, "相談です", session)
+    return answer, calls
+
+
+def test_conversation_runs_locally_through_the_scoped_conversation_runner(monkeypatch, tmp_path):
+    answer, calls = run_conversation(monkeypatch, tmp_path, {"result": "回答", "session_id": SESSION})
+    assert answer == {"text": "回答", "session_id": SESSION}
+    command, kwargs = calls[0]
+    assert "shell" not in kwargs and kwargs["timeout"] == 180
+    assert command[0] == "/venv/python" and command[1].endswith("project_slack.py")
+    assert command[command.index("exec"):command.index("--") + 1] == [
+        "exec", "--project-id", "project-a", "--repo", "a", "--mode", "conversation", "--"]
+    assert command[command.index("--") + 1] == "/bin/claude"
+    assert "--resume" not in command
+    assert "相談です" in command[command.index("-p") + 1]
+
+
+def test_conversation_resumes_only_well_formed_sessions(monkeypatch, tmp_path):
+    _, calls = run_conversation(monkeypatch, tmp_path, {"result": "続き"}, session=SESSION)
+    assert calls[0][0][-2:] == ["--resume", SESSION]
+    _, calls = run_conversation(monkeypatch, tmp_path, {"result": "続き"}, session="--dangerously-skip-permissions")
+    assert "--resume" not in calls[0][0]
+
+
+@pytest.mark.parametrize("values", [
+    {"returncode": 1, "result": {"result": "x"}},
+    {"stdout": "not json"},
+    {"result": {"result": "x", "is_error": True}},
+    {"result": {"result": ""}},
+])
+def test_failed_local_conversation_raises_without_leaking_output(monkeypatch, tmp_path, values):
+    with pytest.raises(RuntimeError) as error:
+        run_conversation(monkeypatch, tmp_path, **values)
+    assert "secret" not in str(error.value)
+
+
+def test_local_conversation_timeout_is_reported(monkeypatch, tmp_path):
+    import subprocess
+    from project_runtime import local_conversation
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 180)
+    monkeypatch.setattr("project_runtime.subprocess.run", run)
+    with pytest.raises(RuntimeError, match="timed out"):
+        local_conversation({"config_path": "c"}, {"id": "p", "repo": "a"}, "x")
 
 
 def test_pending_notifications_retry_without_duplicate_plan_cards(setup):

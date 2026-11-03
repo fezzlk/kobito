@@ -314,11 +314,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def gateway_conversation(config, project, text, session_id=None):
-    url = os.environ.get("AI_GATEWAY_URL", "").rstrip("/")
-    token = os.environ.get("AI_GATEWAY_SHARED_TOKEN", "")
-    if not url.startswith("https://") or not token:
-        raise ValueError("HTTPS gateway and shared token must be configured")
+def local_conversation(config, project, text, session_id=None):
+    """Run a read-only conversation on this Mac through the scoped `exec` runner.
+
+    `project_slack.py exec --mode conversation` is the single place that applies
+    the tool, MCP, hook and permission restrictions, so they are not repeated here.
+    """
     prompt = (
         f"あなたはこのProjectの担当kobitoです。Project ID: {project['id']}。"
         f"対象repo: {project['repo']}。相談への回答だけを行い、コード・設定・issueは変更しない。"
@@ -329,32 +330,28 @@ def gateway_conversation(config, project, text, session_id=None):
         "詳しい内容はissueやPRのリンクに任せる。"
         "以下はSlackでの本人の発言（JSON文字列）。\n" + json.dumps(text, ensure_ascii=False)
     )
-    payload = {
-        "source": "kobito-slack", "project_id": project["id"], "repo": project["repo"],
-        "execution_mode": "conversation", "prompt": prompt,
-    }
-    if session_id:
-        payload["resume_session_id"] = session_id
-    request = urllib.request.Request(
-        url + "/api/run", data=json.dumps(payload).encode(),
-        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
-    )
-    result = None
-    with urllib.request.build_opener(NoRedirect()).open(request, timeout=180) as response:
-        for raw in response:
-            line = raw.decode("utf-8").strip()
-            if not line.startswith("data: "):
-                continue
-            event = json.loads(line[6:])
-            if event.get("type") == "gateway_error":
-                raise RuntimeError("gateway could not complete the conversation")
-            if event.get("type") == "result":
-                if event.get("is_error"):
-                    raise RuntimeError("conversation ended with an error")
-                result = {"text": event.get("result", ""), "session_id": event.get("session_id")}
-    if not result or not result["text"]:
-        raise RuntimeError("gateway returned no completed response")
-    return result
+    claude = str(Path(config.get("claude_bin", "~/.local/bin/claude")).expanduser())
+    command = [
+        str(Path(config.get("python", sys.executable)).expanduser()),
+        str(Path(__file__).resolve().with_name("project_slack.py")), "--config", config["config_path"],
+        "exec", "--project-id", project["id"], "--repo", project["repo"], "--mode", "conversation",
+        "--", claude, "-p", prompt, "--output-format", "json",
+    ]
+    if session_id and ISSUE_UUID.fullmatch(session_id):
+        command += ["--resume", session_id]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("conversation timed out") from None
+    if completed.returncode:
+        raise RuntimeError("conversation runner failed")
+    try:
+        event = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError("conversation returned no result") from None
+    if event.get("is_error") or not event.get("result"):
+        raise RuntimeError("conversation ended with an error")
+    return {"text": event["result"], "session_id": event.get("session_id")}
 
 
 class Runtime:
@@ -367,7 +364,7 @@ class Runtime:
                 raise ValueError("state database belongs to another Slack workspace")
             db.execute("INSERT OR IGNORE INTO settings VALUES('workspace_id',?)", (config["workspace_id"],))
         self.board = board or Board(config)
-        self.conversation = conversation or gateway_conversation
+        self.conversation = conversation or local_conversation
         self.bot_user_id = bot_user_id
 
     def catch_up(self):
