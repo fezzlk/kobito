@@ -70,3 +70,11 @@ Boardの`title`・`body`はそのままSlackに投稿される。Slack向けに�
 初期状態ではProject実行は無効。設定方法と動作確認は[SLACK_SETUP.md](SLACK_SETUP.md)を参照する。
 RJHでの往復確認（FEZ-269）の後、LINE通知は廃止した（FEZ-273）。Projectに属さない通知は`projects.json`の`default_project_id`（kobito、`#p-kobito`）のチャンネルに届く。
 LINEのログイン（usage画面）は通知とは別の用途のため残している。
+
+## 実行するagentの切り替え
+
+kobitoの定期実行（Project実行と全体実行）でClaudeとCodexのどちらを使うかは、`~/.config/kobito/projects.json`のトップレベルの`agent`（`claude`または`codex`、既定`claude`）で決める。書き換えると次の実行から効き、デプロイは要らない。Gatewayは実行のたびに`project_slack.py agent`で値を読み、そのagentで最後まで実行する。失敗しても、もう一方のagentへは切り替えない（FEZ-143）。
+
+- Codexの実行ファイルは`codex_bin`（絶対パス、既定`/usr/local/bin/codex`、`brew install --cask codex`）。
+- Codexの作業には、担当Projectの範囲をプロンプトの先頭に付ける（Claudeは`--append-system-prompt`）。
+- Slackの即時会話はagentの設定にかかわらずClaudeの制限付き実行のまま。

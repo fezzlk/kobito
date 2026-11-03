@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from project_runtime import DEFAULT_CONFIG, Runtime, State, load_config, project_by_id
+from project_runtime import AGENTS, DEFAULT_CODEX_BIN, DEFAULT_CONFIG, Runtime, State, load_config, project_by_id
 
 
 class WorkSlotBusy(Exception):
@@ -136,8 +136,13 @@ def execute(config, args):
     command = list(args.argv)
     if command[:1] == ["--"]:
         command = command[1:]
-    if not command or Path(command[0]).name != "claude":
-        raise ValueError("project runner only accepts the configured Claude executor")
+    executor = Path(command[0]).name if command else None
+    if executor not in AGENTS:
+        raise ValueError("project runner only accepts the configured Claude or Codex executor")
+    if executor == "codex" and (args.mode != "work" or len(command) < 3 or command[1] != "exec"
+                                or command[-1].startswith("-")):
+        # Conversations stay on Claude's restricted mode; Codex work ends with its prompt.
+        raise ValueError("Codex is only accepted as `codex exec ... <prompt>` for project work")
     repo_root = Path(config.get("repos_root", "~/repos")).expanduser().resolve()
     repo = (repo_root / project["repo"]).resolve()
     if repo.parent != repo_root or not repo.is_dir():
@@ -182,7 +187,11 @@ def execute(config, args):
             os.close(fd)
             raise WorkSlotBusy()
         os.set_inheritable(fd, True)
-    command += ["--append-system-prompt", policy]
+    if executor == "codex":
+        # Codex has no --append-system-prompt; the scope goes in front of the prompt.
+        command[-1] = policy + "\n\n" + command[-1]
+    else:
+        command += ["--append-system-prompt", policy]
     os.chdir(str(repo))
     os.execvpe(command[0], command, environment)
 
@@ -290,6 +299,7 @@ def build_parser():
     register.add_argument("--name", required=True)
     register.add_argument("--linear-url", required=True)
     commands.add_parser("next-project")
+    commands.add_parser("agent")
     commands.add_parser("serve")
     commands.add_parser("notify")
     commands.add_parser("priority-digest")
@@ -335,6 +345,10 @@ def main(argv=None):
                                        "enabled": False, "work_enabled": False})
             save_config(config)
             print(json.dumps({"registered": args.project_id, "enabled": False}))
+        elif args.command == "agent":
+            agent = config.get("agent", "claude")
+            print(json.dumps({"agent": agent, **({"bin": str(Path(config.get("codex_bin", DEFAULT_CODEX_BIN)))}
+                                                  if agent == "codex" else {})}))
         elif args.command == "next-project":
             print(json.dumps(state_for(config).next_project(config)))
         elif args.command == "exec":

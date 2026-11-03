@@ -29,6 +29,8 @@ HEADING = re.compile(r"^#{1,6}\s+(.+)$")
 BOLD = re.compile(r"\*\*(.+?)\*\*")
 BULLET = re.compile(r"^(\s*)[-*]\s+")
 LINK = re.compile(r"\[([^\]\n]+)\]\((https://[^)\s|]+)\)")
+AGENTS = ("claude", "codex")
+DEFAULT_CODEX_BIN = "/usr/local/bin/codex"
 PRIORITIES = {1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}
 PRIORITY_ACTION = re.compile(r"kobito_priority_([1-4])\Z")
 ISSUE_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
@@ -110,6 +112,11 @@ def load_config(path=None):
     default = config.get("default_project_id")
     if default is not None and not any(p["id"] == default and p.get("enabled") for p in config.get("projects", [])):
         raise ValueError("default_project_id must name an enabled project")
+    # Which CLI runs kobito's scheduled work. Switching takes effect on the next run.
+    if config.get("agent", "claude") not in AGENTS:
+        raise ValueError("agent must be claude or codex")
+    if not Path(config.get("codex_bin", DEFAULT_CODEX_BIN)).is_absolute():
+        raise ValueError("codex_bin must be an absolute path")
     config["config_path"] = str(path.resolve())
     return config
 
