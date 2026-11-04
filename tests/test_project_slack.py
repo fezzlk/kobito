@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from project_runtime import Runtime, State, load_config
+from project_runtime import Runtime, State, link_label, load_config, render_notification
 from project_slack import discover, execute, apply_discovery
 
 
@@ -498,6 +498,71 @@ def test_decision_card_sections_use_mrkdwn(setup):
     sections = [b["text"] for b in runtime.slack.posts[0]["blocks"] if b["type"] == "section"]
     assert all(s["type"] == "mrkdwn" for s in sections)
     assert "*計画*\n• 手順" in sections[0]["text"]
+
+
+@pytest.mark.parametrize("kind,label", [
+    ("plan_request", "📝 *計画の承認依頼*"), ("decision_request", "❓ *判断のお願い*"),
+    ("approval_request", "🙋 *承認のお願い*"), ("fyi", "ℹ️ *お知らせ*"),
+    ("tech_radar_digest", "📡 *Tech Radar*"), ("opportunity_radar_digest", "💡 *Opportunity Radar*"),
+    ("unknown_type", "🔔 *お知らせ*"),
+])
+def test_notification_names_its_kind_and_moves_the_issue_key_to_the_heading(setup, kind, label):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "type": kind, "title": "FEZ-41: 設計メモを作りたい"}, f"{kind}.yaml")
+    assert runtime.slack.posts[0]["text"].split("\n")[:2] == [f"{label} FEZ-41", "*設計メモを作りたい*"]
+    assert "担当kobito" not in runtime.slack.posts[0]["text"]
+
+
+@pytest.mark.parametrize("state,label", [
+    ("completed", "✅ *完了*"), ("failed", "❌ *停止*"),
+    ("decision_pending", "⏸ *判断待ち*"), ("pr_open", "🔍 *PR の確認待ち*"),
+    ("waiting", "🔔 *お知らせ（waiting）*"),
+])
+def test_status_update_replaces_the_state_tag_with_a_label(setup, state, label):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "type": "status_update", "title": "FEZ-1: 作業",
+                    "body": f"[{state}] 終わりました"}, f"{state}.yaml")
+    assert runtime.slack.posts[0]["text"].split("\n")[:4] == [f"{label} FEZ-1", "*作業*", "", "終わりました"]
+
+
+def test_status_update_drops_an_internal_work_id_from_the_title(setup):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "type": "status_update", "title": "connectivity-preflight: RJH: 接続復旧",
+                    "body": "[completed] 戻りました"}, "status.yaml")
+    assert runtime.slack.posts[0]["text"].split("\n")[:2] == ["✅ *完了*", "*RJH: 接続復旧*"]
+
+
+def test_other_types_keep_a_non_issue_prefix_in_the_title(setup):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "type": "fyi", "title": "RJH: 接続の確認"}, "fyi.yaml")
+    assert runtime.slack.posts[0]["text"].split("\n")[1] == "*RJH: 接続の確認*"
+
+
+def test_links_become_one_labelled_line_and_unknown_urls_stay_raw():
+    assert link_label("https://linear.app/x/issue/fez-41/slug") == "[Linear FEZ-41](https://linear.app/x/issue/fez-41/slug)"
+    assert link_label("https://linear.app/x/project/rjh-1/overview") == "[Linear](https://linear.app/x/project/rjh-1/overview)"
+    assert link_label("https://github.com/x/y/pull/7") == "[PR #7](https://github.com/x/y/pull/7)"
+    assert link_label("https://github.com/x/y") == "[GitHub](https://github.com/x/y)"
+    assert link_label("https://example.com/a") == "https://example.com/a"
+    assert link_label("https://linear.app/x/issue/FEZ-1/a|b") == "https://linear.app/x/issue/FEZ-1/a|b"
+    assert link_label("http://github.com/x/y") == "http://github.com/x/y"
+    text = render_notification({"type": "fyi", "title": "t", "body": "b", "related_links": [
+        "https://github.com/x/y/pull/7", "https://example.com/a"]})
+    assert text.split("\n")[-1] == "[PR #7](https://github.com/x/y/pull/7) ・ https://example.com/a"
+
+
+def test_notification_without_body_or_links_has_no_trailing_blank_lines():
+    assert render_notification({"type": "fyi", "title": "t"}) == "ℹ️ **お知らせ**\n**t**"
+
+
+def test_mentions_stay_disabled_in_title_and_body(setup):
+    runtime, _, _ = setup
+    runtime.notify({**decision_item(), "title": "FEZ-1: <!channel>", "body": "<@UOTHER>"}, "plan.yaml")
+    post = runtime.slack.posts[0]
+    sections = "".join(b["text"]["text"] for b in post["blocks"] if b["type"] == "section")
+    for text in (post["text"], sections):
+        assert "<!channel>" not in text and "<@UOTHER>" not in text
+        assert "&lt;!channel&gt;" in text and "&lt;@UOTHER&gt;" in text
 
 
 def test_thread_reply_addressed_to_another_app_is_ignored(setup):
