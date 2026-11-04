@@ -97,7 +97,7 @@ kobitoが週1回、既存資産・観測した課題・技術動向・偶発的�
 
 ### 5. 週次ダイジェストを通知する
 
-新規・重要更新が1件以上ある場合だけ、human-agent-boardへ1件通知する。
+新規・重要更新が1件以上ある場合だけ、human-agent-boardへ1件通知する。本文は`OPERATING.md`の「Slackへの通知文の書き方」に従う。
 
 ```bash
 python ~/repos/human-agent-board/board.py add \
