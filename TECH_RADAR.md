@@ -69,7 +69,7 @@ kobitoが週1回、技術トレンドとモダンな開発手法を調査し、�
 
 ### 5. 週次ダイジェストを通知する
 
-新規・更新issueが1件以上ある場合だけ、human-agent-boardへ通知を1件作る。個別issueごとに通知しない。
+新規・更新issueが1件以上ある場合だけ、human-agent-boardへ通知を1件作る。個別issueごとに通知しない。本文は`OPERATING.md`の「Slackへの通知文の書き方」に従う。
 
 ```bash
 python ~/repos/human-agent-board/board.py add \

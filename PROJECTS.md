@@ -32,7 +32,7 @@ Gatewayの`KOBITO_PROJECT_DISPATCH_ENABLED`を有効にすると、従来の実�
 2. 関与中issue・既存PR・判断待ち・停止している作業を担当Projectの範囲で回収する。Projectとissueの所属はLinearから確認する。
 3. `board.py list --direction user-to-agent --json`で置き手紙や承認を確認する。本文は`get --json`で読み、`slack_thread_ts`があれば以後の返信でも引き継ぐ。
 4. 置き手紙が既存issueの相談ならそのissueへ結び付ける。新規作業なら、要件・完了条件が十分な場合に限り担当Projectへissue化する。曖昧なら同じSlackスレッドへ質問し、実装しない。選択肢を示す質問は、本文に`A. 〜`・`B. 〜`のように行頭の英大文字で選択肢を並べる。受付が選択肢ごとに「置き手紙: A（〜）」の返信用メッセージを同じスレッドへ投稿し、ユーザーはそれをコピーして返信する。
-5. 計画はLinearのissueコメントとBoardの`plan_request`に書く。Board項目にはissue URLと必要なPR/diffを含め、元のスレッドがあれば`--thread-ts`で指定する。
+5. 計画はLinearのissueコメントとBoardの`plan_request`に書く。Board項目にはissue URLと必要なPR/diffを含め、元のスレッドがあれば`--thread-ts`で指定する。本文は`OPERATING.md`の「Slackへの通知文の書き方」に従う。
 6. 置き手紙を正式なissue・計画へ引き継いだら、そのリンクを返信して受付項目をcompleteする。計画承認待ちのissueは残す。
 7. 承認は該当issueのリンクで照合し、現在の計画・安全条件を再確認してから実装する。優先度と依存関係は担当Project内で評価する。
 8. 作業状態は`board.py status set`で更新し、重要な遷移だけ`--notify`する。issue URLを常に含めると同じSlackスレッドに集まる。

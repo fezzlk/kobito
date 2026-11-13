@@ -36,6 +36,27 @@ PRIORITY_ACTION = re.compile(r"kobito_priority_([1-4])\Z")
 ISSUE_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 ISSUE_KEY = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+\Z")
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+LINEAR_ISSUE_URL = re.compile(r"https://linear\.app/[^/]+/issue/([A-Za-z]+-\d+)(?:/|$)")
+LINEAR_PROJECT_URL = re.compile(r"https://linear\.app/[^/]+/project/")
+GITHUB_PR_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/pull/(\d+)(?:[/?#]|$)")
+GITHUB_REPO_URL = re.compile(r"https://github\.com/[^/]+/[^/]+/?$")
+LINKABLE_URL = re.compile(r"https://[^)\s|]+\Z")
+STATUS_BODY = re.compile(r"\[([a-z_]+)\]\s*")
+WORK_TITLE = re.compile(r"(\S+?)\s*[:：]\s*(.+)\Z", re.S)
+TYPE_LABELS = {
+    "plan_request": "📝 計画の承認依頼",
+    "decision_request": "❓ 判断のお願い",
+    "approval_request": "🙋 承認のお願い",
+    "fyi": "ℹ️ お知らせ",
+    "tech_radar_digest": "📡 Tech Radar",
+    "opportunity_radar_digest": "💡 Opportunity Radar",
+}
+STATUS_LABELS = {
+    "completed": "✅ 完了",
+    "failed": "❌ 停止",
+    "decision_pending": "⏸ 判断待ち",
+    "pr_open": "🔍 PR の確認待ち",
+}
 
 
 def to_mrkdwn(text):
@@ -69,6 +90,56 @@ def chunks(text, size=2900):
         else:
             current = current + "\n" + line if current else line
     return parts + ([current] if current else [])
+
+
+def link_label(url):
+    """A short Markdown link for a known URL; anything else stays as the raw URL."""
+    if not LINKABLE_URL.match(url):
+        return url
+    issue = LINEAR_ISSUE_URL.match(url)
+    pull = GITHUB_PR_URL.match(url)
+    if issue:
+        label = f"Linear {issue.group(1).upper()}"
+    elif LINEAR_PROJECT_URL.match(url):
+        label = "Linear"
+    elif pull:
+        label = f"PR #{pull.group(1)}"
+    elif GITHUB_REPO_URL.match(url):
+        label = "GitHub"
+    else:
+        return url
+    return f"[{label}]({url})"
+
+
+def render_notification(item):
+    """Markdown for a Board item: what kind of message it is, its title, the body, then its links."""
+    kind = item.get("type")
+    title = str(item.get("title") or "").strip()
+    body = str(item.get("body") or "").strip()
+    state = None
+    if kind == "status_update":
+        match = STATUS_BODY.match(body)
+        if match:
+            state, body = match.group(1), body[match.end():]
+    label = STATUS_LABELS.get(state) if kind == "status_update" else TYPE_LABELS.get(kind)
+    if not label:
+        label = f"🔔 お知らせ（{state}）" if state else "🔔 お知らせ"
+    key = None
+    match = WORK_TITLE.match(title)
+    if match and ISSUE_KEY.fullmatch(match.group(1)):
+        key, title = match.groups()
+    elif match and kind == "status_update":
+        # Board prefixes status titles with the work ID, which is only an internal key here.
+        title = match.group(2)
+    emoji, name = label.split(" ", 1)
+    head = f"{emoji} **{name}**" + (f" {key}" if key else "")
+    parts = [head + (f"\n**{title}**" if title else "")]
+    if body:
+        parts.append(body)
+    links = item.get("related_links") or []
+    if links:
+        parts.append(" ・ ".join(link_label(url) for url in links))
+    return "\n\n".join(parts)
 
 
 def reply_templates(body):
@@ -655,7 +726,7 @@ class Runtime:
         channel = project["channel_id"]
         work_id = item.get("work_id")
         for url in item.get("related_links") or []:
-            match = re.search(r"https://linear\.app/[^/]+/issue/([A-Za-z]+-\d+)(?:/|$)", url)
+            match = LINEAR_ISSUE_URL.search(url)
             if match:
                 work_id = match.group(1).upper()
                 break
@@ -663,8 +734,7 @@ class Runtime:
         thread = item.get("slack_thread_ts") or (saved_thread["thread"] if saved_thread else None)
         if thread and not self.state.thread(project["id"], channel, thread):
             raise ValueError("notification thread is not registered to this project")
-        text = f"[{project.get('name', project['repo'])}担当kobito] {item.get('title', '')}\n{item.get('body', '')}"
-        text += "\n" + "\n".join(item.get("related_links") or [])
+        text = render_notification(item)
         templates = reply_templates(item.get("body"))
         if templates:
             text += "\n\n返信は、下の返信用メッセージから一つをコピーして、このスレッドに貼ってください。"
