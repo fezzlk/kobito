@@ -532,6 +532,14 @@ def test_status_update_drops_an_internal_work_id_from_the_title(setup):
     assert runtime.slack.posts[0]["text"].split("\n")[:2] == ["✅ *完了*", "*RJH: 接続復旧*"]
 
 
+def test_issue_key_repeated_in_the_title_is_shown_once():
+    text = render_notification({"type": "status_update", "title": "FEZ-265: FEZ-265: 潮見表",
+                                "body": "[decision_pending] 結果です"})
+    assert text.split("\n")[:2] == ["⏸ **判断待ち** FEZ-265", "**潮見表**"]
+    text = render_notification({"type": "fyi", "title": "FEZ-1: FEZ-2: 関連"})
+    assert text.split("\n")[:2] == ["ℹ️ **お知らせ** FEZ-1", "**FEZ-2: 関連**"]
+
+
 def test_other_types_keep_a_non_issue_prefix_in_the_title(setup):
     runtime, _, _ = setup
     runtime.notify({**decision_item(), "type": "fyi", "title": "RJH: 接続の確認"}, "fyi.yaml")

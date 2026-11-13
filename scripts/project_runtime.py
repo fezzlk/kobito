@@ -128,6 +128,10 @@ def render_notification(item):
     match = WORK_TITLE.match(title)
     if match and ISSUE_KEY.fullmatch(match.group(1)):
         key, title = match.groups()
+        # Board adds the work ID to a status title that may already start with the same key.
+        repeated = WORK_TITLE.match(title)
+        if repeated and repeated.group(1) == key:
+            title = repeated.group(2)
     elif match and kind == "status_update":
         # Board prefixes status titles with the work ID, which is only an internal key here.
         title = match.group(2)
